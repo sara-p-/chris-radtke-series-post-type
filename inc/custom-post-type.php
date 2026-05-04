@@ -1,18 +1,18 @@
 <?php
 
-function testimonial_post_type() {
+function pricing_package_post_type() {
     $labels = array(
-        'name'               => _x( 'Testimonials', 'Post type name'),
-        'singular_name'      => _x( 'Testimonial', 'Post type singular name'),
-        'menu_name'          => _x( 'Testimonials', 'Post type name in menu'),
+        'name'               => _x( 'Pricing Packages', 'Post type name'),
+        'singular_name'      => _x( 'Pricing Package', 'Post type singular name'),
+        'menu_name'          => _x( 'Pricing Packages', 'Post type name in menu'),
         'add_new'            => _x( 'Add New', 'Add new'),
-        'add_new_item'       => __( 'Add New Testimonial' ),
-        'edit_item'          => __( 'Edit Testimonial' ),
-        'new_item'           => __( 'New Testimonial' ),
-        'view_item'          => __( 'View Testimonial' ),
-        'search_items'       => __( 'Search Testimonials' ),
-        'not_found'          => __( 'No Testimonials found' ),
-        'not_found_in_trash' => __( 'No Testimonials found in Trash' ),
+        'add_new_item'       => __( 'Add New Pricing Package' ),
+        'edit_item'          => __( 'Edit Pricing Package' ),
+        'new_item'           => __( 'New Pricing Package' ),
+        'view_item'          => __( 'View Pricing Package' ),
+        'search_items'       => __( 'Search Pricing Packages' ),
+        'not_found'          => __( 'No Pricing Packages found' ),
+        'not_found_in_trash' => __( 'No Pricing Packages found in Trash' ),
     );
 
     $args = array(
@@ -20,11 +20,11 @@ function testimonial_post_type() {
         'public'             => true, 
         'has_archive'        => false, 
         'show_in_rest'       => true, 
-        'supports'           => array( 'title', 'editor', 'thumbnail', 'excerpt', 'custom_fields' ), 
-        'rewrite'            => array( 'slug' => 'testimonials' ), 
+        'supports'           => array( 'title', 'custom_fields' ), 
+        'rewrite'            => array( 'slug' => 'pricing-packages' ), 
         'menu_icon'          => 'dashicons-admin-comments',
     );
 
-    register_post_type( 'testimonial', $args );
+    register_post_type( 'pricing-package', $args );
 }
-add_action( 'init', 'testimonial_post_type' );
+add_action( 'init', 'pricing_package_post_type' );

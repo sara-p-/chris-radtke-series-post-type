@@ -1,258 +1,595 @@
 <?php
 /**
- * Testimonial Custom Post Type - Meta Fields
+ * Pricing Package — Custom Fields
  *
- * Registers and handles custom meta fields for the 'testimonial' CPT:
- *  - Stars (range 1–5)
- *  - Testimonial Content (textarea)
- *  - Name (text)
- *  - Location (text)
+ * Registers meta boxes, fields, sanitization, saving, and REST API
+ * exposure for the `pricing-package` custom post type.
+ *
+ * @package Pricing Package Post Type
  */
 
-// -------------------------------------------------------------------------
-// 1. Register the meta boxes
-// -------------------------------------------------------------------------
-add_action( 'add_meta_boxes', 'testimonial_add_meta_boxes' );
+defined( 'ABSPATH' ) || exit;
 
-function testimonial_add_meta_boxes() {
+// ---------------------------------------------------------------------------
+// 1. Register post meta (REST API exposure + sanitization callbacks)
+// ---------------------------------------------------------------------------
+
+add_action( 'init', 'pp_register_post_meta' );
+
+function pp_register_post_meta(): void {
+
+	$shared = [
+		'object_subtype'    => 'pricing-package',
+		'single'            => true,
+		'show_in_rest'      => true,
+		'revisions_enabled' => true,
+	];
+
+	// Title
+	register_post_meta( 'pricing-package', '_pp_title', array_merge( $shared, [
+		'type'              => 'string',
+		'description'       => __( 'Pricing package title.', 'willow-pricing-package' ),
+		'sanitize_callback' => 'sanitize_text_field',
+		'auth_callback'     => 'pp_meta_auth_callback',
+	] ) );
+
+	// Description
+	register_post_meta( 'pricing-package', '_pp_description', array_merge( $shared, [
+		'type'              => 'string',
+		'description'       => __( 'Pricing package description.', 'willow-pricing-package' ),
+		'sanitize_callback' => 'sanitize_textarea_field',
+		'auth_callback'     => 'pp_meta_auth_callback',
+	] ) );
+
+	// Price
+	register_post_meta( 'pricing-package', '_pp_price', array_merge( $shared, [
+		'type'              => 'string',
+		'description'       => __( 'Pricing package price.', 'willow-pricing-package' ),
+		'sanitize_callback' => 'pp_sanitize_price',
+		'auth_callback'     => 'pp_meta_auth_callback',
+	] ) );
+
+	// List items (stored as a JSON-encoded array)
+	register_post_meta( 'pricing-package', '_pp_list', array_merge( $shared, [
+		'type'              => 'string',
+		'description'       => __( 'Pricing package list items (JSON array).', 'willow-pricing-package' ),
+		'sanitize_callback' => 'pp_sanitize_list',
+		'auth_callback'     => 'pp_meta_auth_callback',
+		'show_in_rest'      => [
+			'schema' => [
+				'type'  => 'string',
+			],
+		],
+	] ) );
+
+	// Link
+	register_post_meta( 'pricing-package', '_pp_link', array_merge( $shared, [
+		'type'              => 'string',
+		'description'       => __( 'Pricing package link URL.', 'willow-pricing-package' ),
+		'sanitize_callback' => 'esc_url_raw',
+		'auth_callback'     => 'pp_meta_auth_callback',
+	] ) );
+
+	// Featured
+	register_post_meta( 'pricing-package', '_pp_featured', array_merge( $shared, [
+		'type'              => 'boolean',
+		'description'       => __( 'Whether this pricing package is featured.', 'willow-pricing-package' ),
+		'sanitize_callback' => 'pp_sanitize_boolean',
+		'auth_callback'     => 'pp_meta_auth_callback',
+		'show_in_rest'      => [
+			'schema' => [
+				'type' => 'boolean',
+			],
+		],
+	] ) );
+}
+
+// ---------------------------------------------------------------------------
+// 2. Auth callback
+// ---------------------------------------------------------------------------
+
+function pp_meta_auth_callback( bool $allowed, string $meta_key, int $post_id, int $user_id ): bool {
+	return user_can( $user_id, 'edit_post', $post_id );
+}
+
+// ---------------------------------------------------------------------------
+// 3. Custom sanitization helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Sanitize price — strip anything that isn't a digit, dot, or comma.
+ */
+function pp_sanitize_price( string $value ): string {
+	$value = sanitize_text_field( $value );
+	return preg_replace( '/[^\d.,]/', '', $value );
+}
+
+/**
+ * Sanitize the list: decode JSON, sanitize each item, re-encode.
+ */
+function pp_sanitize_list( string $value ): string {
+	$items = json_decode( stripslashes( $value ), true );
+
+	if ( ! is_array( $items ) ) {
+		return '[]';
+	}
+
+	$clean = array_values(
+		array_filter(
+			array_map( 'sanitize_text_field', $items ),
+			fn( $item ) => $item !== ''
+		)
+	);
+
+	return wp_json_encode( $clean );
+}
+
+/**
+ * Sanitize boolean — returns true only for truthy values.
+ */
+function pp_sanitize_boolean( mixed $value ): bool {
+	return (bool) filter_var( $value, FILTER_VALIDATE_BOOLEAN );
+}
+
+// ---------------------------------------------------------------------------
+// 4. Register meta box
+// ---------------------------------------------------------------------------
+
+add_action( 'add_meta_boxes', 'pp_add_meta_boxes' );
+
+function pp_add_meta_boxes(): void {
 	add_meta_box(
-		'testimonial_details',           // Unique ID
-		'Testimonial Details',            // Box title
-		'testimonial_meta_box_html',     // Callback
-		'testimonial',                   // Post type
-		'normal',                         // Context
-		'high'                            // Priority
+		'pp_package_details',
+		__( 'Package Details', 'willow-pricing-package' ),
+		'pp_render_meta_box',
+		'pricing-package',
+		'normal',
+		'high'
 	);
 }
 
-// -------------------------------------------------------------------------
-// 2. Render the meta box HTML
-// -------------------------------------------------------------------------
-function testimonial_meta_box_html( $post ) {
+// ---------------------------------------------------------------------------
+// 5. Render meta box
+// ---------------------------------------------------------------------------
 
-	// Security nonce
-	wp_nonce_field( 'testimonial_save_meta', 'testimonial_nonce' );
+function pp_render_meta_box( WP_Post $post ): void {
+	wp_nonce_field( 'pp_save_meta', 'pp_meta_nonce' );
 
-	// Retrieve existing values (fall back to sensible defaults)
-	$stars    = get_post_meta( $post->ID, '_testimonial_stars',   true );
-	$content  = get_post_meta( $post->ID, '_testimonial_content', true );
-	$name     = get_post_meta( $post->ID, '_testimonial_name',    true );
-	$location = get_post_meta( $post->ID, '_testimonial_location', true );
+	$title       = get_post_meta( $post->ID, '_pp_title',       true );
+	$description = get_post_meta( $post->ID, '_pp_description', true );
+	$price       = get_post_meta( $post->ID, '_pp_price',       true );
+	$list_raw    = get_post_meta( $post->ID, '_pp_list',        true );
+	$link        = get_post_meta( $post->ID, '_pp_link',        true );
+	$featured    = (bool) get_post_meta( $post->ID, '_pp_featured', true );
 
-	// Default star rating to 5 when empty
-	if ( $stars === '' ) {
-		$stars = 5;
+	$list_items  = [];
+	if ( ! empty( $list_raw ) ) {
+		$decoded = json_decode( $list_raw, true );
+		if ( is_array( $decoded ) ) {
+			$list_items = $decoded;
+		}
 	}
+
+	pp_enqueue_meta_box_assets();
 	?>
 
-	<style>
-		.tmeta-grid {
-			display: grid;
-			gap: 16px;
-			padding: 8px 0;
-		}
-		.tmeta-row label {
-			display: block;
-			font-weight: 600;
-			margin-bottom: 4px;
-		}
-		.tmeta-row input[type="text"],
-		.tmeta-row textarea {
-			width: 100%;
-			box-sizing: border-box;
-		}
-		.tmeta-row textarea {
-			height: 120px;
-			resize: vertical;
-		}
-		.star-range-wrap {
-			display: flex;
-			align-items: center;
-			gap: 10px;
-		}
-		.star-range-wrap input[type="range"] {
-			width: 200px;
-			cursor: pointer;
-		}
-		#stars-display {
-			font-size: 1.1em;
-			font-weight: 700;
-			min-width: 24px;
-		}
-	</style>
+	<div class="pp-meta-box">
 
-	<div class="tmeta-grid">
+		<?php pp_render_styles(); ?>
 
-		<!-- Stars -->
-		<div class="tmeta-row">
-			<label for="testimonial_stars">Stars (1 – 5)</label>
-			<div class="star-range-wrap">
-				<input
-					type="range"
-					id="testimonial_stars"
-					name="testimonial_stars"
-					min="1"
-					max="5"
-					step="1"
-					value="<?php echo esc_attr( $stars ); ?>"
-					oninput="document.getElementById('stars-display').textContent = this.value;"
-				>
-				<span id="stars-display"><?php echo esc_html( $stars ); ?></span>
-			</div>
+		<!-- Title -->
+		<div class="pp-field pp-field--required">
+			<label for="pp_title" class="pp-label">
+				<?php esc_html_e( 'Title', 'willow-pricing-package' ); ?>
+				<span class="pp-required" aria-label="<?php esc_attr_e( 'Required', 'willow-pricing-package' ); ?>">*</span>
+			</label>
+			<input
+				type="text"
+				id="pp_title"
+				name="pp_title"
+				class="pp-input"
+				value="<?php echo esc_attr( $title ); ?>"
+				required
+				aria-required="true"
+			>
 		</div>
 
-		<!-- Testimonial Content -->
-		<div class="tmeta-row">
-			<label for="testimonial_content">Testimonial Content</label>
+		<!-- Description -->
+		<div class="pp-field">
+			<label for="pp_description" class="pp-label">
+				<?php esc_html_e( 'Description', 'willow-pricing-package' ); ?>
+			</label>
 			<textarea
-				id="testimonial_content"
-				name="testimonial_content"
-				placeholder="Enter the testimonial text…"
-			><?php echo esc_textarea( $content ); ?></textarea>
+				id="pp_description"
+				name="pp_description"
+				class="pp-input pp-input--textarea"
+				rows="3"
+			><?php echo esc_textarea( $description ); ?></textarea>
 		</div>
 
-		<!-- Name -->
-		<div class="tmeta-row">
-			<label for="testimonial_name">Name</label>
+		<!-- Price -->
+		<div class="pp-field pp-field--required">
+			<label for="pp_price" class="pp-label">
+				<?php esc_html_e( 'Price', 'willow-pricing-package' ); ?>
+				<span class="pp-required" aria-label="<?php esc_attr_e( 'Required', 'willow-pricing-package' ); ?>">*</span>
+			</label>
 			<input
 				type="text"
-				id="testimonial_name"
-				name="testimonial_name"
-				value="<?php echo esc_attr( $name ); ?>"
-				placeholder="e.g. Jane Smith"
+				id="pp_price"
+				name="pp_price"
+				class="pp-input pp-input--half"
+				value="<?php echo esc_attr( $price ); ?>"
+				placeholder="e.g. 49.99"
+				required
+				aria-required="true"
 			>
 		</div>
 
-		<!-- Location -->
-		<div class="tmeta-row">
-			<label for="testimonial_location">Location</label>
+		<!-- List -->
+		<div class="pp-field pp-field--list">
+			<label class="pp-label">
+				<?php esc_html_e( 'List', 'willow-pricing-package' ); ?>
+				<span class="pp-hint"><?php esc_html_e( 'Optional. Add one item per row.', 'willow-pricing-package' ); ?></span>
+			</label>
+
+			<div id="pp-list-items" class="pp-list-items">
+				<?php if ( ! empty( $list_items ) ) : ?>
+					<?php foreach ( $list_items as $item ) : ?>
+						<div class="pp-list-item">
+							<input
+								type="text"
+								name="pp_list_items[]"
+								class="pp-input pp-list-item__input"
+								value="<?php echo esc_attr( $item ); ?>"
+								placeholder="<?php esc_attr_e( 'List item…', 'willow-pricing-package' ); ?>"
+							>
+							<button
+								type="button"
+								class="pp-list-item__remove"
+								aria-label="<?php esc_attr_e( 'Remove item', 'willow-pricing-package' ); ?>"
+							>
+								<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+							</button>
+						</div>
+					<?php endforeach; ?>
+				<?php endif; ?>
+			</div>
+
+			<button type="button" id="pp-add-list-item" class="pp-btn pp-btn--add">
+				<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+				<?php esc_html_e( 'Add List Item', 'willow-pricing-package' ); ?>
+			</button>
+		</div>
+
+		<!-- Link -->
+		<div class="pp-field pp-field--required">
+			<label for="pp_link" class="pp-label">
+				<?php esc_html_e( 'Link', 'willow-pricing-package' ); ?>
+				<span class="pp-required" aria-label="<?php esc_attr_e( 'Required', 'willow-pricing-package' ); ?>">*</span>
+			</label>
 			<input
-				type="text"
-				id="testimonial_location"
-				name="testimonial_location"
-				value="<?php echo esc_attr( $location ); ?>"
-				placeholder="e.g. Atlanta, GA"
+				type="url"
+				id="pp_link"
+				name="pp_link"
+				class="pp-input"
+				value="<?php echo esc_attr( $link ); ?>"
+				placeholder="https://"
+				required
+				aria-required="true"
 			>
 		</div>
 
-	</div>
+		<!-- Featured -->
+		<div class="pp-field pp-field--checkbox">
+			<label class="pp-checkbox-label" for="pp_featured">
+				<input
+					type="checkbox"
+					id="pp_featured"
+					name="pp_featured"
+					class="pp-checkbox"
+					value="1"
+					<?php checked( $featured, true ); ?>
+				>
+				<span class="pp-checkbox-text">
+					<?php esc_html_e( 'Featured', 'willow-pricing-package' ); ?>
+				</span>
+				<span class="pp-hint"><?php esc_html_e( 'Mark this package as featured.', 'willow-pricing-package' ); ?></span>
+			</label>
+		</div>
+
+	</div><!-- .pp-meta-box -->
+
+	<?php pp_render_inline_script(); ?>
+
 	<?php
 }
 
-// -------------------------------------------------------------------------
-// 3. Register the meta fields
-// -------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// 6. Styles (injected inline — scoped to meta box)
+// ---------------------------------------------------------------------------
 
-function testimonial_register_meta() {
+function pp_render_styles(): void {
+	?>
+	<style>
+		.pp-meta-box {
+			padding: 4px 0 8px;
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+		}
 
-    $common = [
-        'object_subtype' => 'testimonial',
-        'single'         => true,
-        'show_in_rest'   => true,
-    ];
+		/* Field wrapper */
+		.pp-field {
+			margin-bottom: 20px;
+		}
+		.pp-field:last-child {
+			margin-bottom: 0;
+		}
 
-    register_post_meta( 'post', '_testimonial_stars', array_merge( $common, [
-        'type'              => 'integer',
-        'description'       => 'Star rating from 1 to 5',
-        'sanitize_callback' => function( $val ) {
-            return max( 1, min( 5, absint( $val ) ) );
-        },
-        'auth_callback'     => function() {
-            return current_user_can( 'edit_posts' );
-        },
-    ]));
+		/* Label */
+		.pp-label {
+			display: flex;
+			align-items: center;
+			gap: 6px;
+			margin-bottom: 6px;
+			font-size: 13px;
+			font-weight: 600;
+			color: #1e1e1e;
+		}
 
-    register_post_meta( 'post', '_testimonial_content', array_merge( $common, [
-        'type'              => 'string',
-        'description'       => 'Testimonial body text',
-        'sanitize_callback' => 'sanitize_textarea_field',
-        'auth_callback'     => function() {
-            return current_user_can( 'edit_posts' );
-        },
-    ]));
+		.pp-required {
+			color: #c0392b;
+			font-size: 14px;
+			line-height: 1;
+		}
 
-    register_post_meta( 'post', '_testimonial_name', array_merge( $common, [
-        'type'              => 'string',
-        'description'       => 'Name of the person giving the testimonial',
-        'sanitize_callback' => 'sanitize_text_field',
-        'auth_callback'     => function() {
-            return current_user_can( 'edit_posts' );
-        },
-    ]));
+		.pp-hint {
+			font-size: 11px;
+			font-weight: 400;
+			color: #757575;
+		}
 
-    register_post_meta( 'post', '_testimonial_location', array_merge( $common, [
-        'type'              => 'string',
-        'description'       => 'Location of the person giving the testimonial',
-        'sanitize_callback' => 'sanitize_text_field',
-        'auth_callback'     => function() {
-            return current_user_can( 'edit_posts' );
-        },
-    ]));
+		/* Inputs */
+		.pp-input {
+			display: block;
+			width: 100%;
+			padding: 8px 10px;
+			font-size: 13px;
+			color: #1e1e1e;
+			background: #fff;
+			border: 1px solid #c3c4c7;
+			border-radius: 4px;
+			box-shadow: inset 0 1px 2px rgba(0,0,0,.07);
+			transition: border-color .15s, box-shadow .15s;
+			box-sizing: border-box;
+		}
+		.pp-input:focus {
+			border-color: #2271b1;
+			box-shadow: 0 0 0 1px #2271b1;
+			outline: none;
+		}
+
+		.pp-input--textarea {
+			resize: vertical;
+			min-height: 80px;
+		}
+
+		.pp-input--half {
+			max-width: 200px;
+		}
+
+		/* List field */
+		.pp-list-items {
+			display: flex;
+			flex-direction: column;
+			gap: 8px;
+			margin-bottom: 10px;
+		}
+
+		.pp-list-item {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+		}
+
+		.pp-list-item__input {
+			flex: 1;
+		}
+
+		.pp-list-item__remove {
+			flex-shrink: 0;
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 28px;
+			height: 28px;
+			padding: 0;
+			background: #fff;
+			border: 1px solid #c3c4c7;
+			border-radius: 4px;
+			color: #757575;
+			cursor: pointer;
+			transition: background .15s, border-color .15s, color .15s;
+		}
+		.pp-list-item__remove:hover {
+			background: #fce8e6;
+			border-color: #c0392b;
+			color: #c0392b;
+		}
+
+		/* Buttons */
+		.pp-btn--add {
+			display: inline-flex;
+			align-items: center;
+			gap: 6px;
+			padding: 6px 12px;
+			font-size: 12px;
+			font-weight: 600;
+			color: #2271b1;
+			background: #f0f6fc;
+			border: 1px solid #2271b1;
+			border-radius: 4px;
+			cursor: pointer;
+			transition: background .15s, color .15s;
+		}
+		.pp-btn--add:hover {
+			background: #2271b1;
+			color: #fff;
+		}
+
+		/* Checkbox */
+		.pp-field--checkbox {
+			display: flex;
+			align-items: flex-start;
+		}
+		.pp-checkbox-label {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			cursor: pointer;
+			font-size: 13px;
+			color: #1e1e1e;
+		}
+		.pp-checkbox {
+			width: 16px;
+			height: 16px;
+			margin: 0;
+			cursor: pointer;
+			accent-color: #2271b1;
+		}
+		.pp-checkbox-text {
+			font-weight: 600;
+		}
+	</style>
+	<?php
 }
 
-add_action( 'init', 'testimonial_register_meta' );
+// ---------------------------------------------------------------------------
+// 7. Inline JS for dynamic list field
+// ---------------------------------------------------------------------------
 
-// -------------------------------------------------------------------------
-// 4. Save the meta data
-// -------------------------------------------------------------------------
-add_action( 'save_post_testimonial', 'testimonial_save_meta' );
+function pp_render_inline_script(): void {
+	?>
+	<script>
+	( function () {
+		const container  = document.getElementById( 'pp-list-items' );
+		const addBtn     = document.getElementById( 'pp-add-list-item' );
+		const placeholder = <?php echo wp_json_encode( esc_attr__( 'List item…', 'willow-pricing-package' ) ); ?>;
+		const removeLabel = <?php echo wp_json_encode( esc_attr__( 'Remove item', 'willow-pricing-package' ) ); ?>;
 
-function testimonial_save_meta( $post_id ) {
+		function createItem( value = '' ) {
+			const row = document.createElement( 'div' );
+			row.className = 'pp-list-item';
 
-	// --- Security checks ---
+			const input = document.createElement( 'input' );
+			input.type        = 'text';
+			input.name        = 'pp_list_items[]';
+			input.className   = 'pp-input pp-list-item__input';
+			input.value       = value;
+			input.placeholder = placeholder;
 
-	// Verify nonce
+			const btn = document.createElement( 'button' );
+			btn.type      = 'button';
+			btn.className = 'pp-list-item__remove';
+			btn.setAttribute( 'aria-label', removeLabel );
+			btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+			btn.addEventListener( 'click', () => row.remove() );
+
+			row.appendChild( input );
+			row.appendChild( btn );
+			return row;
+		}
+
+		// Wire up existing remove buttons
+		container.querySelectorAll( '.pp-list-item__remove' ).forEach( btn => {
+			btn.addEventListener( 'click', () => btn.closest( '.pp-list-item' ).remove() );
+		} );
+
+		addBtn.addEventListener( 'click', () => {
+			const item = createItem();
+			container.appendChild( item );
+			item.querySelector( 'input' ).focus();
+		} );
+	} )();
+	</script>
+	<?php
+}
+
+// ---------------------------------------------------------------------------
+// 8. Enqueue any extra admin assets (placeholder — extend as needed)
+// ---------------------------------------------------------------------------
+
+function pp_enqueue_meta_box_assets(): void {
+	// Styles and scripts are injected inline above.
+	// Hook wp_enqueue_media() here if you ever add a media picker.
+}
+
+// ---------------------------------------------------------------------------
+// 9. Save meta
+// ---------------------------------------------------------------------------
+
+add_action( 'save_post_pricing-package', 'pp_save_meta', 10, 2 );
+
+function pp_save_meta( int $post_id, WP_Post $post ): void {
+
+	// Nonce check
 	if (
-		! isset( $_POST['testimonial_nonce'] ) ||
-		! wp_verify_nonce( $_POST['testimonial_nonce'], 'testimonial_save_meta' )
+		! isset( $_POST['pp_meta_nonce'] ) ||
+		! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['pp_meta_nonce'] ) ), 'pp_save_meta' )
 	) {
 		return;
 	}
 
-	// Bail on autosave
-	if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
-		return;
-	}
-
-	// Check user capability
+	// Capability check
 	if ( ! current_user_can( 'edit_post', $post_id ) ) {
 		return;
 	}
 
-	// --- Sanitize & save each field ---
-
-	// Stars: clamp to 1–5
-	if ( isset( $_POST['testimonial_stars'] ) ) {
-		$stars = absint( $_POST['testimonial_stars'] );
-		$stars = max( 1, min( 5, $stars ) );
-		update_post_meta( $post_id, '_testimonial_stars', $stars );
+	// Don't save on autosave / revision
+	if ( wp_is_post_autosave( $post_id ) || wp_is_post_revision( $post_id ) ) {
+		return;
 	}
 
-	// Testimonial Content
-	if ( isset( $_POST['testimonial_content'] ) ) {
-		update_post_meta(
-			$post_id,
-			'_testimonial_content',
-			sanitize_textarea_field( $_POST['testimonial_content'] )
-		);
+	// --- Title (required) ---
+	if ( isset( $_POST['pp_title'] ) ) {
+		$title = sanitize_text_field( wp_unslash( $_POST['pp_title'] ) );
+		update_post_meta( $post_id, '_pp_title', $title );
 	}
 
-	// Name
-	if ( isset( $_POST['testimonial_name'] ) ) {
-		update_post_meta(
-			$post_id,
-			'_testimonial_name',
-			sanitize_text_field( $_POST['testimonial_name'] )
-		);
+	// --- Description ---
+	if ( isset( $_POST['pp_description'] ) ) {
+		$description = sanitize_textarea_field( wp_unslash( $_POST['pp_description'] ) );
+		update_post_meta( $post_id, '_pp_description', $description );
 	}
 
-	// Location
-	if ( isset( $_POST['testimonial_location'] ) ) {
-		update_post_meta(
-			$post_id,
-			'_testimonial_location',
-			sanitize_text_field( $_POST['testimonial_location'] )
-		);
+	// --- Price (required) ---
+	if ( isset( $_POST['pp_price'] ) ) {
+		$price = pp_sanitize_price( wp_unslash( $_POST['pp_price'] ) );
+		update_post_meta( $post_id, '_pp_price', $price );
 	}
+
+	// --- List items ---
+	$raw_items  = isset( $_POST['pp_list_items'] ) && is_array( $_POST['pp_list_items'] )
+		? $_POST['pp_list_items']
+		: [];
+
+	$clean_items = array_values(
+		array_filter(
+			array_map(
+				fn( $item ) => sanitize_text_field( wp_unslash( $item ) ),
+				$raw_items
+			),
+			fn( $item ) => $item !== ''
+		)
+	);
+
+	update_post_meta( $post_id, '_pp_list', wp_json_encode( $clean_items ) );
+
+	// --- Link (required) ---
+	if ( isset( $_POST['pp_link'] ) ) {
+		$link = esc_url_raw( wp_unslash( $_POST['pp_link'] ) );
+		update_post_meta( $post_id, '_pp_link', $link );
+	}
+
+	// --- Featured ---
+	$featured = isset( $_POST['pp_featured'] ) && '1' === $_POST['pp_featured'];
+	update_post_meta( $post_id, '_pp_featured', (int) $featured );
 }
-
