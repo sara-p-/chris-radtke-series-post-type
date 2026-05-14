@@ -15,6 +15,7 @@ defined( 'ABSPATH' ) || exit;
 // ---------------------------------------------------------------------------
 
 add_action( 'init', 'pp_register_post_meta' );
+add_action( 'init', 'pp_migrate_list_meta_json_strings_to_array', 30 );
 
 function pp_register_post_meta(): void {
 
@@ -22,16 +23,16 @@ function pp_register_post_meta(): void {
 		'object_subtype'    => 'pricing-package',
 		'single'            => true,
 		'show_in_rest'      => true,
-		'revisions_enabled' => true,
+		// 'revisions_enabled' => true,
 	];
 
-	// Title
-	register_post_meta( 'pricing-package', '_pp_title', array_merge( $shared, [
-		'type'              => 'string',
-		'description'       => __( 'Pricing package title.', 'willow-pricing-package' ),
-		'sanitize_callback' => 'sanitize_text_field',
-		'auth_callback'     => 'pp_meta_auth_callback',
-	] ) );
+	// // Title
+	// register_post_meta( 'pricing-package', '_pp_title', array_merge( $shared, [
+	// 	'type'              => 'string',
+	// 	'description'       => __( 'Pricing package title.', 'willow-pricing-package' ),
+	// 	'sanitize_callback' => 'sanitize_text_field',
+	// 	'auth_callback'     => 'pp_meta_auth_callback',
+	// ] ) );
 
 	// Description
 	register_post_meta( 'pricing-package', '_pp_description', array_merge( $shared, [
@@ -49,15 +50,19 @@ function pp_register_post_meta(): void {
 		'auth_callback'     => 'pp_meta_auth_callback',
 	] ) );
 
-	// List items (stored as a JSON-encoded array)
+	// List items (stored as a PHP array in post meta; REST exposes array of strings)
 	register_post_meta( 'pricing-package', '_pp_list', array_merge( $shared, [
-		'type'              => 'string',
-		'description'       => __( 'Pricing package list items (JSON array).', 'willow-pricing-package' ),
+		'type'              => 'array',
+		'description'       => __( 'Pricing package list items.', 'willow-pricing-package' ),
 		'sanitize_callback' => 'pp_sanitize_list',
 		'auth_callback'     => 'pp_meta_auth_callback',
+		'default'           => [],
 		'show_in_rest'      => [
 			'schema' => [
-				'type'  => 'string',
+				'type'  => 'array',
+				'items' => [
+					'type' => 'string',
+				],
 			],
 		],
 	] ) );
@@ -73,7 +78,7 @@ function pp_register_post_meta(): void {
 	// Featured
 	register_post_meta( 'pricing-package', '_pp_featured', array_merge( $shared, [
 		'type'              => 'boolean',
-		'description'       => __( 'Whether this pricing package is featured.', 'willow-pricing-package' ),
+		'description'       => __( 'Whether this pricing package is the "Most Popular" package.', 'willow-pricing-package' ),
 		'sanitize_callback' => 'pp_sanitize_boolean',
 		'auth_callback'     => 'pp_meta_auth_callback',
 		'show_in_rest'      => [
@@ -105,23 +110,64 @@ function pp_sanitize_price( string $value ): string {
 }
 
 /**
- * Sanitize the list: decode JSON, sanitize each item, re-encode.
+ * Normalize list meta to a flat array of sanitized strings.
+ *
+ * Accepts an array (REST / native meta) or a legacy JSON string from older saves.
+ *
+ * @param mixed $meta_value Value passed from `sanitize_*_meta_*` or raw meta.
+ * @return string[] Non-empty string items, re-indexed.
  */
-function pp_sanitize_list( string $value ): string {
-	$items = json_decode( stripslashes( $value ), true );
+function pp_sanitize_list( mixed $meta_value, string $meta_key = '', string $object_type = 'post', string $object_subtype = '' ): array {
+	$items = [];
 
-	if ( ! is_array( $items ) ) {
-		return '[]';
+	if ( is_array( $meta_value ) ) {
+		$items = $meta_value;
+	} elseif ( is_string( $meta_value ) && $meta_value !== '' ) {
+		$decoded = json_decode( stripslashes( $meta_value ), true );
+		$items   = is_array( $decoded ) ? $decoded : [];
 	}
 
-	$clean = array_values(
+	return array_values(
 		array_filter(
-			array_map( 'sanitize_text_field', $items ),
-			fn( $item ) => $item !== ''
+			array_map(
+				static function ( $item ) {
+					return sanitize_text_field( is_scalar( $item ) ? (string) $item : '' );
+				},
+				$items
+			),
+			static fn( $item ) => $item !== ''
+		)
+	);
+}
+
+/**
+ * One-time migration: legacy `_pp_list` values stored as JSON strings → PHP arrays.
+ */
+function pp_migrate_list_meta_json_strings_to_array(): void {
+	if ( get_option( 'pp_list_meta_migrated_to_array' ) ) {
+		return;
+	}
+
+	$post_ids = get_posts(
+		array(
+			'post_type'              => 'pricing-package',
+			'post_status'            => 'any',
+			'posts_per_page'         => -1,
+			'fields'                 => 'ids',
+			'no_found_rows'          => true,
+			'update_post_meta_cache' => false,
+			'update_post_term_cache' => false,
 		)
 	);
 
-	return wp_json_encode( $clean );
+	foreach ( $post_ids as $post_id ) {
+		$raw = get_post_meta( (int) $post_id, '_pp_list', true );
+		if ( is_string( $raw ) && $raw !== '' ) {
+			update_post_meta( (int) $post_id, '_pp_list', pp_sanitize_list( $raw ) );
+		}
+	}
+
+	update_option( 'pp_list_meta_migrated_to_array', '1', true );
 }
 
 /**
@@ -155,20 +201,14 @@ function pp_add_meta_boxes(): void {
 function pp_render_meta_box( WP_Post $post ): void {
 	wp_nonce_field( 'pp_save_meta', 'pp_meta_nonce' );
 
-	$title       = get_post_meta( $post->ID, '_pp_title',       true );
+	// $title       = get_post_meta( $post->ID, '_pp_title',       true );
 	$description = get_post_meta( $post->ID, '_pp_description', true );
 	$price       = get_post_meta( $post->ID, '_pp_price',       true );
 	$list_raw    = get_post_meta( $post->ID, '_pp_list',        true );
 	$link        = get_post_meta( $post->ID, '_pp_link',        true );
 	$featured    = (bool) get_post_meta( $post->ID, '_pp_featured', true );
 
-	$list_items  = [];
-	if ( ! empty( $list_raw ) ) {
-		$decoded = json_decode( $list_raw, true );
-		if ( is_array( $decoded ) ) {
-			$list_items = $decoded;
-		}
-	}
+	$list_items = pp_sanitize_list( $list_raw );
 
 	pp_enqueue_meta_box_assets();
 	?>
@@ -178,21 +218,21 @@ function pp_render_meta_box( WP_Post $post ): void {
 		<?php pp_render_styles(); ?>
 
 		<!-- Title -->
-		<div class="pp-field pp-field--required">
+		<!-- <div class="pp-field pp-field--required">
 			<label for="pp_title" class="pp-label">
-				<?php esc_html_e( 'Title', 'willow-pricing-package' ); ?>
-				<span class="pp-required" aria-label="<?php esc_attr_e( 'Required', 'willow-pricing-package' ); ?>">*</span>
+				<?php // esc_html_e( 'Title', 'willow-pricing-package' ); ?>
+				<span class="pp-required" aria-label="<?php // esc_attr_e( 'Required', 'willow-pricing-package' ); ?>">*</span>
 			</label>
 			<input
 				type="text"
 				id="pp_title"
 				name="pp_title"
 				class="pp-input"
-				value="<?php echo esc_attr( $title ); ?>"
+				value="<?php // echo esc_attr( $title ); ?>"
 				required
 				aria-required="true"
 			>
-		</div>
+		</div> -->
 
 		<!-- Description -->
 		<div class="pp-field">
@@ -293,7 +333,7 @@ function pp_render_meta_box( WP_Post $post ): void {
 				<span class="pp-checkbox-text">
 					<?php esc_html_e( 'Featured', 'willow-pricing-package' ); ?>
 				</span>
-				<span class="pp-hint"><?php esc_html_e( 'Mark this package as featured.', 'willow-pricing-package' ); ?></span>
+				<span class="pp-hint"><?php esc_html_e( 'Mark this package as the "Most Popular" package.', 'willow-pricing-package' ); ?></span>
 			</label>
 		</div>
 
@@ -581,7 +621,7 @@ function pp_save_meta( int $post_id, WP_Post $post ): void {
 		)
 	);
 
-	update_post_meta( $post_id, '_pp_list', wp_json_encode( $clean_items ) );
+	update_post_meta( $post_id, '_pp_list', pp_sanitize_list( $clean_items ) );
 
 	// --- Link (required) ---
 	if ( isset( $_POST['pp_link'] ) ) {

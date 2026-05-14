@@ -1,7 +1,7 @@
 <?php
 /**
- * Plugin Name: Testimonial Post Type
- * Description: Registers a custom post type for Testimonials
+ * Plugin Name: Pricing Package Post Type
+ * Description: Registers a custom post type for Pricing Packages
  * Version: 1.0
  * Author: Sara Pitt
  * Text Domain: willow-pricing-package

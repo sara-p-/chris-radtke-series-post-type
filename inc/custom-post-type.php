@@ -20,8 +20,8 @@ function pricing_package_post_type() {
         'public'             => true, 
         'has_archive'        => false, 
         'show_in_rest'       => true, 
-        'supports'           => array( 'title', 'custom_fields' ), 
-        'rewrite'            => array( 'slug' => 'pricing-packages' ), 
+        'supports'           => array( 'title', 'custom-fields' ), 
+        // 'rewrite'            => array( 'slug' => 'pricing-packages' ), 
         'menu_icon'          => 'dashicons-admin-comments',
     );
 
