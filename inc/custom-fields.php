@@ -67,6 +67,23 @@ function pp_register_post_meta(): void {
 		],
 	] ) );
 
+	// List item "included" flags (parallel array to _pp_list; 1 = included, 0 = excluded)
+register_post_meta( 'pricing-package', '_pp_list_plus', array_merge( $shared, [
+    'type'              => 'array',
+    'description'       => __( 'Whether each pricing package list item should use a plus icon.', 'willow-pricing-package' ),
+    'sanitize_callback' => 'pp_sanitize_list_plus',
+    'auth_callback'     => 'pp_meta_auth_callback',
+    'default'           => [],
+    'show_in_rest'      => [
+        'schema' => [
+            'type'  => 'array',
+            'items' => [
+                'type' => 'boolean',
+            ],
+        ],
+    ],
+] ) );
+
 	// Link
 	register_post_meta( 'pricing-package', '_pp_link', array_merge( $shared, [
 		'type'              => 'string',
@@ -171,6 +188,22 @@ function pp_migrate_list_meta_json_strings_to_array(): void {
 }
 
 /**
+ * Normalize list-plus meta to a flat array of booleans.
+ *
+ * @param mixed $meta_value Raw value from POST or meta storage.
+ * @return bool[] One boolean per list item, re-indexed.
+ */
+function pp_sanitize_list_plus( mixed $meta_value ): array {
+    $items = is_array( $meta_value ) ? $meta_value : [];
+    return array_values(
+        array_map(
+            static fn( $v ) => (bool) filter_var( $v, FILTER_VALIDATE_BOOLEAN ),
+            $items
+        )
+    );
+}
+
+/**
  * Sanitize boolean — returns true only for truthy values.
  */
 function pp_sanitize_boolean( mixed $value ): bool {
@@ -205,10 +238,14 @@ function pp_render_meta_box( WP_Post $post ): void {
 	$description = get_post_meta( $post->ID, '_pp_description', true );
 	$price       = get_post_meta( $post->ID, '_pp_price',       true );
 	$list_raw    = get_post_meta( $post->ID, '_pp_list',        true );
+	$list_plus_raw  = get_post_meta( $post->ID, '_pp_list_plus', true ); // ← add this
 	$link        = get_post_meta( $post->ID, '_pp_link',        true );
 	$featured    = (bool) get_post_meta( $post->ID, '_pp_featured', true );
 
+
 	$list_items = pp_sanitize_list( $list_raw );
+	$list_plus = pp_sanitize_list_plus( is_array( $list_plus_raw ) ? $list_plus_raw : [] );
+
 
 	pp_enqueue_meta_box_assets();
 	?>
@@ -216,23 +253,6 @@ function pp_render_meta_box( WP_Post $post ): void {
 	<div class="pp-meta-box">
 
 		<?php pp_render_styles(); ?>
-
-		<!-- Title -->
-		<!-- <div class="pp-field pp-field--required">
-			<label for="pp_title" class="pp-label">
-				<?php // esc_html_e( 'Title', 'willow-pricing-package' ); ?>
-				<span class="pp-required" aria-label="<?php // esc_attr_e( 'Required', 'willow-pricing-package' ); ?>">*</span>
-			</label>
-			<input
-				type="text"
-				id="pp_title"
-				name="pp_title"
-				class="pp-input"
-				value="<?php // echo esc_attr( $title ); ?>"
-				required
-				aria-required="true"
-			>
-		</div> -->
 
 		<!-- Description -->
 		<div class="pp-field">
@@ -274,25 +294,39 @@ function pp_render_meta_box( WP_Post $post ): void {
 
 			<div id="pp-list-items" class="pp-list-items">
 				<?php if ( ! empty( $list_items ) ) : ?>
-					<?php foreach ( $list_items as $item ) : ?>
-						<div class="pp-list-item">
-							<input
-								type="text"
-								name="pp_list_items[]"
-								class="pp-input pp-list-item__input"
-								value="<?php echo esc_attr( $item ); ?>"
-								placeholder="<?php esc_attr_e( 'List item…', 'willow-pricing-package' ); ?>"
-							>
-							<button
-								type="button"
-								class="pp-list-item__remove"
-								aria-label="<?php esc_attr_e( 'Remove item', 'willow-pricing-package' ); ?>"
-							>
-								<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-							</button>
-						</div>
-					<?php endforeach; ?>
-				<?php endif; ?>
+    <?php foreach ( $list_items as $index => $item ) : ?>
+        <?php $plus = isset( $list_plus[ $index ] ) ? $list_plus[ $index ] : false; ?>
+        <div class="pp-list-item">
+					<input type="hidden" name="pp_list_plus[<?php echo $index; ?>]" value="0">
+
+
+            <label class="pp-list-item__plus-label">
+        <input
+            type="checkbox"
+            name="pp_list_plus[<?php echo $index; ?>]"
+            class="pp-checkbox pp-list-item__plus"
+            value="1"
+            <?php checked( $plus, true ); ?>
+        >
+        <?php esc_html_e( 'Plus', 'willow-pricing-package' ); ?>
+    </label>
+            <input
+                type="text"
+                name="pp_list_items[]"
+                class="pp-input pp-list-item__input"
+                value="<?php echo esc_attr( $item ); ?>"
+                placeholder="<?php esc_attr_e( 'List item…', 'willow-pricing-package' ); ?>"
+            >
+            <button
+                type="button"
+                class="pp-list-item__remove"
+                aria-label="<?php esc_attr_e( 'Remove item', 'willow-pricing-package' ); ?>"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+    <?php endforeach; ?>
+<?php endif; ?>
 			</div>
 
 			<button type="button" id="pp-add-list-item" class="pp-btn pp-btn--add">
@@ -507,50 +541,80 @@ function pp_render_styles(): void {
 // ---------------------------------------------------------------------------
 
 function pp_render_inline_script(): void {
-	?>
-	<script>
-	( function () {
-		const container  = document.getElementById( 'pp-list-items' );
-		const addBtn     = document.getElementById( 'pp-add-list-item' );
-		const placeholder = <?php echo wp_json_encode( esc_attr__( 'List item…', 'willow-pricing-package' ) ); ?>;
-		const removeLabel = <?php echo wp_json_encode( esc_attr__( 'Remove item', 'willow-pricing-package' ) ); ?>;
+    ?>
+    <script>
+    ( function () {
+        const container   = document.getElementById( 'pp-list-items' );
+        const addBtn      = document.getElementById( 'pp-add-list-item' );
+        const placeholder = <?php echo wp_json_encode( esc_attr__( 'List item…', 'willow-pricing-package' ) ); ?>;
+        const removeLabel = <?php echo wp_json_encode( esc_attr__( 'Remove item', 'willow-pricing-package' ) ); ?>;
+        const plusLabel = <?php echo wp_json_encode( esc_attr__( 'Use plus icon for this item', 'willow-pricing-package' ) ); ?>;
 
-		function createItem( value = '' ) {
-			const row = document.createElement( 'div' );
-			row.className = 'pp-list-item';
+        function createItem( value = '', plus = false ) {
+    const row = document.createElement( 'div' );
+    row.className = 'pp-list-item';
 
-			const input = document.createElement( 'input' );
-			input.type        = 'text';
-			input.name        = 'pp_list_items[]';
-			input.className   = 'pp-input pp-list-item__input';
-			input.value       = value;
-			input.placeholder = placeholder;
+    const hidden = document.createElement( 'input' );
+    hidden.type  = 'hidden';
+    hidden.name  = 'pp_list_plus[]';
+    hidden.value = '0';
 
-			const btn = document.createElement( 'button' );
-			btn.type      = 'button';
-			btn.className = 'pp-list-item__remove';
-			btn.setAttribute( 'aria-label', removeLabel );
-			btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
-			btn.addEventListener( 'click', () => row.remove() );
+    const checkbox = document.createElement( 'input' );
+    checkbox.type      = 'checkbox';
+    checkbox.name      = 'pp_list_plus[]';
+    checkbox.className = 'pp-checkbox pp-list-item__plus';
+    checkbox.value     = '1';
+    checkbox.checked   = plus;
 
-			row.appendChild( input );
-			row.appendChild( btn );
-			return row;
-		}
+    const label = document.createElement( 'label' );
+    label.className = 'pp-list-item__plus-label';
+    label.textContent = plusLabel;
+    label.prepend( checkbox );
 
-		// Wire up existing remove buttons
-		container.querySelectorAll( '.pp-list-item__remove' ).forEach( btn => {
-			btn.addEventListener( 'click', () => btn.closest( '.pp-list-item' ).remove() );
-		} );
+    const input = document.createElement( 'input' );
+    input.type        = 'text';
+    input.name        = 'pp_list_items[]';
+    input.className   = 'pp-input pp-list-item__input';
+    input.value       = value;
+    input.placeholder = placeholder;
 
-		addBtn.addEventListener( 'click', () => {
-			const item = createItem();
-			container.appendChild( item );
-			item.querySelector( 'input' ).focus();
-		} );
-	} )();
-	</script>
-	<?php
+    const btn = document.createElement( 'button' );
+    btn.type      = 'button';
+    btn.className = 'pp-list-item__remove';
+    btn.setAttribute( 'aria-label', removeLabel );
+    btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+    btn.addEventListener( 'click', () => row.remove() );
+
+    row.appendChild( hidden );
+    row.appendChild( label );
+    row.appendChild( input );
+    row.appendChild( btn );
+    return row;
+}
+
+        // Wire up existing remove buttons
+        container.querySelectorAll( '.pp-list-item__remove' ).forEach( btn => {
+            btn.addEventListener( 'click', () => btn.closest( '.pp-list-item' ).remove() );
+        } );
+
+        addBtn.addEventListener( 'click', () => {
+            const item = createItem();
+            container.appendChild( item );
+            item.querySelector( 'input[type="text"]' ).focus();
+        } );
+
+				document.querySelector( '#post' ).addEventListener( 'submit', function () {
+    container.querySelectorAll( '.pp-list-item' ).forEach( ( row, i ) => {
+        const hidden   = row.querySelector( 'input[type="hidden"]' );
+        const checkbox = row.querySelector( 'input[type="checkbox"]' );
+        if ( hidden )   hidden.name   = 'pp_list_plus[' + i + ']';
+        if ( checkbox ) checkbox.name = 'pp_list_plus[' + i + ']';
+        row.querySelector( 'input[type="text"]' ).name = 'pp_list_items[' + i + ']';
+    } );
+} );
+    } )();
+    </script>
+    <?php
 }
 
 // ---------------------------------------------------------------------------
@@ -606,22 +670,28 @@ function pp_save_meta( int $post_id, WP_Post $post ): void {
 		update_post_meta( $post_id, '_pp_price', $price );
 	}
 
-	// --- List items ---
-	$raw_items  = isset( $_POST['pp_list_items'] ) && is_array( $_POST['pp_list_items'] )
-		? $_POST['pp_list_items']
-		: [];
+// --- List items + plus flags ---
+$raw_items = isset( $_POST['pp_list_items'] ) && is_array( $_POST['pp_list_items'] )
+    ? $_POST['pp_list_items']
+    : [];
+$raw_plus = isset( $_POST['pp_list_plus'] ) && is_array( $_POST['pp_list_plus'] )
+    ? $_POST['pp_list_plus']
+    : [];
 
-	$clean_items = array_values(
-		array_filter(
-			array_map(
-				fn( $item ) => sanitize_text_field( wp_unslash( $item ) ),
-				$raw_items
-			),
-			fn( $item ) => $item !== ''
-		)
-	);
+$clean_items = [];
+$clean_plus  = [];
 
-	update_post_meta( $post_id, '_pp_list', pp_sanitize_list( $clean_items ) );
+foreach ( $raw_items as $i => $raw_item ) {
+    $item = sanitize_text_field( wp_unslash( $raw_item ) );
+    if ( $item === '' ) {
+        continue;
+    }
+    $clean_items[] = $item;
+    $clean_plus[]  = isset( $raw_plus[ $i ] ) && '1' === sanitize_text_field( wp_unslash( $raw_plus[ $i ] ) );
+}
+
+update_post_meta( $post_id, '_pp_list',      pp_sanitize_list( $clean_items ) );
+update_post_meta( $post_id, '_pp_list_plus', pp_sanitize_list_plus( $clean_plus ) );
 
 	// --- Link (required) ---
 	if ( isset( $_POST['pp_link'] ) ) {
