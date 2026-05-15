@@ -18,9 +18,10 @@ function pricing_package_post_type() {
     $args = array(
         'labels'             => $labels,
         'public'             => true, 
+        'hierarchical' => true,
         'has_archive'        => false, 
         'show_in_rest'       => true, 
-        'supports'           => array( 'title', 'custom-fields' ), 
+        'supports'           => array( 'title', 'custom-fields', 'page-attributes' ), 
         // 'rewrite'            => array( 'slug' => 'pricing-packages' ), 
         'menu_icon'          => 'dashicons-admin-comments',
     );
