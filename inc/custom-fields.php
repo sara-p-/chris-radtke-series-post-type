@@ -114,6 +114,54 @@ function pp_meta_auth_callback( bool $allowed, string $meta_key, int $post_id, i
 	return user_can( $user_id, 'edit_post', $post_id );
 }
 
+/**
+ * Decode HTML entities until stable (handles double-encoded REST values).
+ */
+function pp_decode_entities( string $value ): string {
+	$previous = '';
+
+	while ( $previous !== $value ) {
+		$previous = $value;
+		$value    = wp_specialchars_decode( $value, ENT_QUOTES );
+	}
+
+	return $value;
+}
+
+/**
+ * Return plain-text strings from REST for use with data-wp-text (textContent).
+ */
+function pp_rest_prepare_decode_entities( WP_REST_Response $response, WP_Post $post, WP_REST_Request $request ): WP_REST_Response {
+	unset( $post, $request );
+
+	$data = $response->get_data();
+
+	if ( isset( $data['title']['rendered'] ) && is_string( $data['title']['rendered'] ) ) {
+		$data['title']['rendered'] = pp_decode_entities( $data['title']['rendered'] );
+	}
+
+	if ( isset( $data['meta'] ) && is_array( $data['meta'] ) ) {
+		foreach ( [ '_pp_description', '_pp_price' ] as $meta_key ) {
+			if ( isset( $data['meta'][ $meta_key ] ) && is_string( $data['meta'][ $meta_key ] ) ) {
+				$data['meta'][ $meta_key ] = pp_decode_entities( $data['meta'][ $meta_key ] );
+			}
+		}
+
+		if ( isset( $data['meta']['_pp_list'] ) && is_array( $data['meta']['_pp_list'] ) ) {
+			$data['meta']['_pp_list'] = array_map(
+				static fn( $item ) => is_string( $item ) ? pp_decode_entities( $item ) : $item,
+				$data['meta']['_pp_list']
+			);
+		}
+	}
+
+	$response->set_data( $data );
+
+	return $response;
+}
+
+add_filter( 'rest_prepare_pricing-package', 'pp_rest_prepare_decode_entities', 10, 3 );
+
 // ---------------------------------------------------------------------------
 // 3. Custom sanitization helpers
 // ---------------------------------------------------------------------------
