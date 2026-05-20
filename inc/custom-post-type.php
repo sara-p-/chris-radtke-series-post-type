@@ -18,14 +18,39 @@ function pricing_package_post_type() {
     $args = array(
         'labels'             => $labels,
         'public'             => true, 
-        'hierarchical' => true,
+        'hierarchical'      => true,
         'has_archive'        => false, 
         'show_in_rest'       => true, 
+        'taxonomies' => array('locations'),
         'supports'           => array( 'title', 'custom-fields', 'page-attributes' ), 
         // 'rewrite'            => array( 'slug' => 'pricing-packages' ), 
         'menu_icon'          => 'dashicons-admin-comments',
+       
     );
 
     register_post_type( 'pricing-package', $args );
 }
 add_action( 'init', 'pricing_package_post_type' );
+
+add_action('init', function() {
+
+    // 1. Register the taxonomy
+    register_taxonomy('locations', 'pricing-package', [
+        'label'        => 'Locations',
+        'labels'       => [
+            'name'          => 'Locations',
+            'singular_name' => 'Location',
+            'add_new_item'  => 'Add New Location',
+            'edit_item'     => 'Edit Location',
+            'search_items'  => 'Search Locations',
+        ],
+        'hierarchical'      => true,   // true = like categories, false = like tags
+        'public'            => true,
+        'show_ui'           => true,
+        'show_in_rest'      => true,   // required for Gutenberg + REST API
+        'rest_base'         => 'locations', // URL slug in REST API
+    ]);
+
+});
+
+
