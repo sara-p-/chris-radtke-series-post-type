@@ -30,7 +30,7 @@ function pp_register_post_meta(): void {
 	register_post_meta( 'pricing-package', '_pp_title', array_merge( $shared, [
 		'type'              => 'string',
 		'description'       => __( 'Pricing package title.', 'willow-pricing-package' ),
-		'sanitize_callback' => 'sanitize_text_field',
+		'sanitize_callback' => 'pp_sanitize_title',
 		'auth_callback'     => 'pp_meta_auth_callback',
 	] ) );
 
@@ -82,6 +82,14 @@ function pp_register_post_meta(): void {
 				],
 			],
 		],
+	] ) );
+
+	// Additional Text
+	register_post_meta( 'pricing-package', '_pp_additional_text', array_merge( $shared, [
+		'type'              => 'string',
+		'description'       => __( 'Additional text displayed after the list.', 'willow-pricing-package' ),
+		'sanitize_callback' => 'sanitize_textarea_field',
+		'auth_callback'     => 'pp_meta_auth_callback',
 	] ) );
 
 	// Link
@@ -141,7 +149,7 @@ function pp_rest_prepare_decode_entities( WP_REST_Response $response, WP_Post $p
 	}
 
 	if ( isset( $data['meta'] ) && is_array( $data['meta'] ) ) {
-		foreach ( [ '_pp_title', '_pp_description', '_pp_price' ] as $meta_key ) {
+		foreach ( [ '_pp_title', '_pp_description', '_pp_price', '_pp_additional_text' ] as $meta_key ) {
 			if ( isset( $data['meta'][ $meta_key ] ) && is_string( $data['meta'][ $meta_key ] ) ) {
 				$data['meta'][ $meta_key ] = pp_decode_entities( $data['meta'][ $meta_key ] );
 			}
@@ -165,6 +173,15 @@ add_filter( 'rest_prepare_pricing-package', 'pp_rest_prepare_decode_entities', 1
 // ---------------------------------------------------------------------------
 // 3. Custom sanitization helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Sanitize title — preserves <br> and <br /> tags, strips everything else.
+ */
+function pp_sanitize_title( string $value ): string {
+	$value = wp_unslash( $value );
+	$value = wp_kses( $value, [ 'br' => [] ] );
+	return trim( $value );
+}
 
 /**
  * Sanitize price — strip anything that isn't a digit, dot, or comma.
@@ -282,13 +299,14 @@ function pp_add_meta_boxes(): void {
 function pp_render_meta_box( WP_Post $post ): void {
 	wp_nonce_field( 'pp_save_meta', 'pp_meta_nonce' );
 
-	$title       = get_post_meta( $post->ID, '_pp_title',       true );
-	$description = get_post_meta( $post->ID, '_pp_description', true );
-	$price       = get_post_meta( $post->ID, '_pp_price',       true );
-	$list_raw    = get_post_meta( $post->ID, '_pp_list',        true );
-	$list_plus_raw  = get_post_meta( $post->ID, '_pp_list_plus', true );
-	$link        = get_post_meta( $post->ID, '_pp_link',        true );
-	$featured    = (bool) get_post_meta( $post->ID, '_pp_featured', true );
+	$title           = get_post_meta( $post->ID, '_pp_title',           true );
+	$description     = get_post_meta( $post->ID, '_pp_description',     true );
+	$price           = get_post_meta( $post->ID, '_pp_price',           true );
+	$list_raw        = get_post_meta( $post->ID, '_pp_list',            true );
+	$list_plus_raw   = get_post_meta( $post->ID, '_pp_list_plus',       true );
+	$additional_text = get_post_meta( $post->ID, '_pp_additional_text', true );
+	$link            = get_post_meta( $post->ID, '_pp_link',            true );
+	$featured        = (bool) get_post_meta( $post->ID, '_pp_featured', true );
 
 	$list_items = pp_sanitize_list( $list_raw );
 	$list_plus  = pp_sanitize_list_plus( is_array( $list_plus_raw ) ? $list_plus_raw : [] );
@@ -316,6 +334,7 @@ function pp_render_meta_box( WP_Post $post ): void {
 				required
 				aria-required="true"
 			>
+			<p class="pp-hint" style="margin-top:4px;"><?php esc_html_e( 'You may use <br> tags to add line breaks.', 'willow-pricing-package' ); ?></p>
 		</div>
 
 		<!-- Description -->
@@ -396,6 +415,20 @@ function pp_render_meta_box( WP_Post $post ): void {
 				<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
 				<?php esc_html_e( 'Add List Item', 'willow-pricing-package' ); ?>
 			</button>
+		</div>
+
+		<!-- Additional Text -->
+		<div class="pp-field">
+			<label for="pp_additional_text" class="pp-label">
+				<?php esc_html_e( 'Additional Text', 'willow-pricing-package' ); ?>
+			</label>
+			<textarea
+				id="pp_additional_text"
+				name="pp_additional_text"
+				class="pp-input pp-input--textarea"
+				rows="3"
+				placeholder="<?php esc_attr_e( 'Optional additional text…', 'willow-pricing-package' ); ?>"
+			><?php echo esc_textarea( $additional_text ); ?></textarea>
 		</div>
 
 		<!-- Link -->
@@ -717,7 +750,7 @@ function pp_save_meta( int $post_id, WP_Post $post ): void {
 
 	// --- Title (required) ---
 	if ( isset( $_POST['pp_title'] ) ) {
-		$title = sanitize_text_field( wp_unslash( $_POST['pp_title'] ) );
+		$title = pp_sanitize_title( $_POST['pp_title'] );
 		update_post_meta( $post_id, '_pp_title', $title );
 	}
 
@@ -755,6 +788,12 @@ function pp_save_meta( int $post_id, WP_Post $post ): void {
 
 	update_post_meta( $post_id, '_pp_list',      pp_sanitize_list( $clean_items ) );
 	update_post_meta( $post_id, '_pp_list_plus', pp_sanitize_list_plus( $clean_plus ) );
+
+	// --- Additional Text ---
+	if ( isset( $_POST['pp_additional_text'] ) ) {
+		$additional_text = sanitize_textarea_field( wp_unslash( $_POST['pp_additional_text'] ) );
+		update_post_meta( $post_id, '_pp_additional_text', $additional_text );
+	}
 
 	// --- Link (required) ---
 	if ( isset( $_POST['pp_link'] ) ) {

@@ -49,6 +49,11 @@ add_action('init', function() {
         'show_ui'           => true,
         'show_in_rest'      => true,   // required for Gutenberg + REST API
         'rest_base'         => 'locations', // URL slug in REST API
+        'rewrite'           => [
+            'slug'         => 'pricing-locations', // anything that won't collide
+            'with_front'   => false,
+            'hierarchical' => true,
+        ],
     ]);
 
 });
