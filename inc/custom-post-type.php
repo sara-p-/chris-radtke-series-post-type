@@ -19,11 +19,11 @@ function series_post_type() {
         'labels'        => $labels,
         'public'        => true,
         'hierarchical'  => true,
-        'has_archive'   => false,
+        'has_archive'   => true,
         'show_in_rest'  => true,
         'taxonomies'    => array( 'projects', 'collections' ),
         'supports'      => array( 'title', 'page-attributes', 'thumbnail' ),
-        // 'rewrite'    => array( 'slug' => 'pricing-packages' ),
+        // 'rewrite'    => array( 'slug' => 'work' ),
         'menu_icon'     => 'dashicons-images-alt',
     );
 
