@@ -188,7 +188,10 @@ function series_meta_box_render( WP_Post $post ): void {
 					'textarea_rows' => 8,
 					'media_buttons' => false,
 					'teeny'         => false,
-					'tinymce'       => true,
+					'tinymce'       => [
+						'toolbar1' => 'formatselect bold italic | bullist numlist | blockquote | alignleft aligncenter alignright | link unlink | wp_adv',
+						'toolbar2' => 'strikethrough hr forecolor | pastetext removeformat | charmap | outdent indent | undo redo | wp_help',
+					],
 					'quicktags'     => true,
 				]
 			);
@@ -229,7 +232,10 @@ function series_meta_box_render( WP_Post $post ): void {
 					'textarea_rows' => 8,
 					'media_buttons' => false,
 					'teeny'         => false,
-					'tinymce'       => true,
+					'tinymce'       => [
+						'toolbar1' => 'formatselect bold italic | bullist numlist | blockquote | alignleft aligncenter alignright | link unlink | wp_adv',
+						'toolbar2' => 'strikethrough hr forecolor | pastetext removeformat | charmap | outdent indent | undo redo | wp_help',
+					],
 					'quicktags'     => true,
 				]
 			);
@@ -309,7 +315,7 @@ function series_repeater_row_html( $index, array $item ): void {
         <?php esc_html_e( 'Item Description', 'series-post-type' ); ?>
       </label>
       <textarea id="series-item-desc-<?php echo esc_attr( $index ); ?>" class="series-item-item-description widefat"
-        rows="5"><?php echo $is_template ? '' : wp_kses_post( $item_description ); ?></textarea>
+        rows="5"><?php echo $is_template ? '' : esc_textarea( $item_description ); ?></textarea>
     </div>
 
   </div><!-- .series-row-fields -->
@@ -327,16 +333,30 @@ function series_repeater_row_html( $index, array $item ): void {
 
 
 /* ==========================================================================
-   5. ENQUEUE META BOX ASSETS (inline — no extra files needed)
+   5. ENQUEUE META BOX ASSETS
    ========================================================================== */
 
-function series_enqueue_meta_box_assets(): void {
+// Enqueue scripts and styles on the correct hook so they're registered
+// before the page renders, not mid-render from inside the meta box callback.
+add_action( 'admin_enqueue_scripts', 'series_enqueue_meta_box_scripts' );
 
-	// Media uploader.
+function series_enqueue_meta_box_scripts( string $hook ): void {
+
+	// Only load on the post add/edit screen for the series CPT.
+	if ( ! in_array( $hook, [ 'post.php', 'post-new.php' ], true ) ) {
+		return;
+	}
+	$screen = get_current_screen();
+	if ( ! $screen || 'series' !== $screen->post_type ) {
+		return;
+	}
+
 	wp_enqueue_media();
-
-	// Dashicons are already enqueued in the admin; listed for clarity.
+	wp_enqueue_editor();
 	wp_enqueue_style( 'dashicons' );
+}
+
+function series_enqueue_meta_box_assets(): void {
 
 	// ── Inline CSS ────────────────────────────────────────────────────────
 	$css = '
@@ -470,7 +490,7 @@ function series_enqueue_meta_box_assets(): void {
       let desc = '';
 
       if (edId && window.tinymce && tinymce.get(edId)) {
-        desc = tinymce.get(edId).getContent();
+        desc = tinymce.get(edId).getContent().replace(/\n/g, '');
       } else {
         desc = $row.find('.series-item-item-description').val();
       }
@@ -504,13 +524,13 @@ function series_enqueue_meta_box_assets(): void {
       selector: '#' + id,
       skin: 'wordpress',
       skin_url: '<?php echo esc_js( includes_url( 'js/tinymce/skins/wordpress' ) ); ?>',
-      plugins: 'charmap hr lists paste tabfocus fullscreen wplink',
-      toolbar: 'formatselect bold italic | bullist numlist | blockquote | alignleft aligncenter alignright | link unlink | fullscreen',
+      plugins: 'charmap hr lists paste tabfocus wplink',
+      toolbar: 'formatselect bold italic | bullist numlist | blockquote | alignleft aligncenter alignright | link unlink',
       menubar: false,
       statusbar: false,
       resize: true,
       min_height: 200,
-      wpautop: true,
+      entity_encoding: 'raw',
       setup: function(editor) {
         editor.on('input keyup change NodeChange', syncJSON);
       },
@@ -639,12 +659,20 @@ function series_enqueue_meta_box_assets(): void {
 
   /* ── init existing rows on page load ─────────────────────────── */
 
-  repeater.children('.series-repeater-row').each(function() {
-    const $ta = $(this).find('.series-item-item-description');
-    if ($ta.length) {
-      initEditor($ta);
+  // Poll until tinymce is available, then initialise all existing rows.
+  // This guards against the script not yet being parsed when this code runs.
+  (function waitForTinymce() {
+    if (window.tinymce) {
+      repeater.children('.series-repeater-row').each(function() {
+        const $ta = $(this).find('.series-item-item-description');
+        if ($ta.length) {
+          initEditor($ta);
+        }
+      });
+    } else {
+      setTimeout(waitForTinymce, 50);
     }
-  });
+  })();
 
 })(jQuery);
 </script>
