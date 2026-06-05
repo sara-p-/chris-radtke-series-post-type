@@ -1,807 +1,723 @@
 <?php
 /**
- * Pricing Package — Custom Fields
+ * Series — Custom Fields
  *
  * Registers meta boxes, fields, sanitization, saving, and REST API
- * exposure for the `pricing-package` custom post type.
+ * exposure for the `series` custom post type.
  *
- * @package Pricing Package Post Type
+ * Meta keys registered:
+ *  - _series_hero_image_id      (int,    attachment ID for the hero image)
+ *  - _series_description        (string, WYSIWYG)
+ *  - _series_press              (string, WYSIWYG)
+ *  - _series_items              (array,  repeater — title, image_id, item_description)
+ *
+ * @package Series Post Type
  */
 
 defined( 'ABSPATH' ) || exit;
 
-// ---------------------------------------------------------------------------
-// 1. Register post meta (REST API exposure + sanitization callbacks)
-// ---------------------------------------------------------------------------
 
-add_action( 'init', 'pp_register_post_meta' );
-add_action( 'init', 'pp_migrate_list_meta_json_strings_to_array', 30 );
+/* ==========================================================================
+   1. REGISTER META (post meta + REST API exposure)
+   ========================================================================== */
 
-function pp_register_post_meta(): void {
+add_action( 'init', 'series_register_meta' );
+
+function series_register_meta(): void {
 
 	$shared = [
-		'object_subtype'    => 'pricing-package',
-		'single'            => true,
-		'show_in_rest'      => true,
-		// 'revisions_enabled' => true,
+		'single'        => true,
+		'show_in_rest'  => true,
+		'auth_callback' => fn() => current_user_can( 'edit_posts' ),
 	];
 
-	// Title
-	register_post_meta( 'pricing-package', '_pp_title', array_merge( $shared, [
-		'type'              => 'string',
-		'description'       => __( 'Pricing package title.', 'willow-pricing-package' ),
-		'sanitize_callback' => 'pp_sanitize_title',
-		'auth_callback'     => 'pp_meta_auth_callback',
+	// Hero image — stores an attachment ID.
+	register_post_meta( 'series', '_series_hero_image_id', array_merge( $shared, [
+		'type'              => 'integer',
+		'description'       => 'Series hero image attachment ID.',
+		'sanitize_callback' => 'absint',
 	] ) );
 
-	// Description
-	register_post_meta( 'pricing-package', '_pp_description', array_merge( $shared, [
+	// Plain WYSIWYG fields stored as post content-style HTML.
+	register_post_meta( 'series', '_series_description', array_merge( $shared, [
 		'type'              => 'string',
-		'description'       => __( 'Pricing package description.', 'willow-pricing-package' ),
-		'sanitize_callback' => 'sanitize_textarea_field',
-		'auth_callback'     => 'pp_meta_auth_callback',
+		'description'       => 'Series description (HTML).',
+		'sanitize_callback' => 'series_sanitize_wysiwyg',
 	] ) );
 
-	// Price
-	register_post_meta( 'pricing-package', '_pp_price', array_merge( $shared, [
+	register_post_meta( 'series', '_series_press', array_merge( $shared, [
 		'type'              => 'string',
-		'description'       => __( 'Pricing package price.', 'willow-pricing-package' ),
-		'sanitize_callback' => 'pp_sanitize_price',
-		'auth_callback'     => 'pp_meta_auth_callback',
+		'description'       => 'Series press (HTML).',
+		'sanitize_callback' => 'series_sanitize_wysiwyg',
 	] ) );
 
-	// List items (stored as a PHP array in post meta; REST exposes array of strings)
-	register_post_meta( 'pricing-package', '_pp_list', array_merge( $shared, [
-		'type'              => 'array',
-		'description'       => __( 'Pricing package list items.', 'willow-pricing-package' ),
-		'sanitize_callback' => 'pp_sanitize_list',
-		'auth_callback'     => 'pp_meta_auth_callback',
-		'default'           => [],
+	// Repeater stored as a JSON-encoded array.
+	register_post_meta( 'series', '_series_items', array_merge( $shared, [
+		'type'              => 'string',
+		'description'       => 'Series repeater items (JSON).',
+		'sanitize_callback' => 'series_sanitize_items_json',
+		// Expose the decoded array shape to the REST API.
 		'show_in_rest'      => [
 			'schema' => [
-				'type'  => 'array',
-				'items' => [
-					'type' => 'string',
-				],
-			],
-		],
-	] ) );
-
-	// List item "included" flags (parallel array to _pp_list; 1 = included, 0 = excluded)
-	register_post_meta( 'pricing-package', '_pp_list_plus', array_merge( $shared, [
-		'type'              => 'array',
-		'description'       => __( 'Whether each pricing package list item should use a plus icon.', 'willow-pricing-package' ),
-		'sanitize_callback' => 'pp_sanitize_list_plus',
-		'auth_callback'     => 'pp_meta_auth_callback',
-		'default'           => [],
-		'show_in_rest'      => [
-			'schema' => [
-				'type'  => 'array',
-				'items' => [
-					'type' => 'boolean',
-				],
-			],
-		],
-	] ) );
-
-	// Additional Text
-	register_post_meta( 'pricing-package', '_pp_additional_text', array_merge( $shared, [
-		'type'              => 'string',
-		'description'       => __( 'Additional text displayed after the list.', 'willow-pricing-package' ),
-		'sanitize_callback' => 'sanitize_textarea_field',
-		'auth_callback'     => 'pp_meta_auth_callback',
-	] ) );
-
-	// Link
-	register_post_meta( 'pricing-package', '_pp_link', array_merge( $shared, [
-		'type'              => 'string',
-		'description'       => __( 'Pricing package link URL.', 'willow-pricing-package' ),
-		'sanitize_callback' => 'esc_url_raw',
-		'auth_callback'     => 'pp_meta_auth_callback',
-	] ) );
-
-	// Featured
-	register_post_meta( 'pricing-package', '_pp_featured', array_merge( $shared, [
-		'type'              => 'boolean',
-		'description'       => __( 'Whether this pricing package is the "Most Popular" package.', 'willow-pricing-package' ),
-		'sanitize_callback' => 'pp_sanitize_boolean',
-		'auth_callback'     => 'pp_meta_auth_callback',
-		'show_in_rest'      => [
-			'schema' => [
-				'type' => 'boolean',
+				'type'  => 'string',
 			],
 		],
 	] ) );
 }
 
-// ---------------------------------------------------------------------------
-// 2. Auth callback
-// ---------------------------------------------------------------------------
 
-function pp_meta_auth_callback( bool $allowed, string $meta_key, int $post_id, int $user_id ): bool {
-	return user_can( $user_id, 'edit_post', $post_id );
+/* ==========================================================================
+   2. SANITIZATION HELPERS
+   ========================================================================== */
+
+/**
+ * Sanitize a WYSIWYG / rich-text value.
+ * Allows the same tags WordPress itself permits in post content.
+ */
+function series_sanitize_wysiwyg( string $value ): string {
+	return wp_kses_post( $value );
 }
 
 /**
- * Decode HTML entities until stable (handles double-encoded REST values).
+ * Sanitize the repeater JSON string.
+ * Each item: { title: string, image_id: int, item_description: string }
  */
-function pp_decode_entities( string $value ): string {
-	$previous = '';
+function series_sanitize_items_json( string $value ): string {
 
-	while ( $previous !== $value ) {
-		$previous = $value;
-		$value    = wp_specialchars_decode( $value, ENT_QUOTES );
+	$items = json_decode( wp_unslash( $value ), true );
+
+	if ( ! is_array( $items ) ) {
+		return '[]';
 	}
 
-	return $value;
-}
+	$clean = [];
 
-/**
- * Return plain-text strings from REST for use with data-wp-text (textContent).
- */
-function pp_rest_prepare_decode_entities( WP_REST_Response $response, WP_Post $post, WP_REST_Request $request ): WP_REST_Response {
-	unset( $post, $request );
-
-	$data = $response->get_data();
-
-	if ( isset( $data['title']['rendered'] ) && is_string( $data['title']['rendered'] ) ) {
-		$data['title']['rendered'] = pp_decode_entities( $data['title']['rendered'] );
-	}
-
-	if ( isset( $data['meta'] ) && is_array( $data['meta'] ) ) {
-		foreach ( [ '_pp_title', '_pp_description', '_pp_price', '_pp_additional_text' ] as $meta_key ) {
-			if ( isset( $data['meta'][ $meta_key ] ) && is_string( $data['meta'][ $meta_key ] ) ) {
-				$data['meta'][ $meta_key ] = pp_decode_entities( $data['meta'][ $meta_key ] );
-			}
+	foreach ( $items as $item ) {
+		if ( ! is_array( $item ) ) {
+			continue;
 		}
 
-		if ( isset( $data['meta']['_pp_list'] ) && is_array( $data['meta']['_pp_list'] ) ) {
-			$data['meta']['_pp_list'] = array_map(
-				static fn( $item ) => is_string( $item ) ? pp_decode_entities( $item ) : $item,
-				$data['meta']['_pp_list']
-			);
-		}
+		$title = isset( $item['title'] ) ? sanitize_text_field( $item['title'] ) : '';
+
+		$clean[] = [
+			'title'            => $title,
+			'image_id'         => isset( $item['image_id'] ) ? absint( $item['image_id'] ) : 0,
+			'item_description' => isset( $item['item_description'] ) ? wp_kses_post( $item['item_description'] ) : '',
+		];
 	}
 
-	$response->set_data( $data );
-
-	return $response;
+	return wp_json_encode( $clean );
 }
 
-add_filter( 'rest_prepare_pricing-package', 'pp_rest_prepare_decode_entities', 10, 3 );
 
-// ---------------------------------------------------------------------------
-// 3. Custom sanitization helpers
-// ---------------------------------------------------------------------------
+/* ==========================================================================
+   3. META BOX — REGISTRATION
+   ========================================================================== */
 
-/**
- * Sanitize title — preserves <br> and <br /> tags, strips everything else.
- */
-function pp_sanitize_title( string $value ): string {
-	$value = wp_unslash( $value );
-	$value = wp_kses( $value, [ 'br' => [] ] );
-	return trim( $value );
-}
+add_action( 'add_meta_boxes', 'series_add_meta_boxes' );
 
-/**
- * Sanitize price — strip anything that isn't a digit, dot, or comma.
- */
-function pp_sanitize_price( string $value ): string {
-	$value = sanitize_text_field( $value );
-	return preg_replace( '/[^\d.,]/', '', $value );
-}
+function series_add_meta_boxes(): void {
 
-/**
- * Normalize list meta to a flat array of sanitized strings.
- *
- * Accepts an array (REST / native meta) or a legacy JSON string from older saves.
- *
- * @param mixed $meta_value Value passed from `sanitize_*_meta_*` or raw meta.
- * @return string[] Non-empty string items, re-indexed.
- */
-function pp_sanitize_list( mixed $meta_value, string $meta_key = '', string $object_type = 'post', string $object_subtype = '' ): array {
-	$items = [];
-
-	if ( is_array( $meta_value ) ) {
-		$items = $meta_value;
-	} elseif ( is_string( $meta_value ) && $meta_value !== '' ) {
-		$decoded = json_decode( stripslashes( $meta_value ), true );
-		$items   = is_array( $decoded ) ? $decoded : [];
-	}
-
-	return array_values(
-		array_filter(
-			array_map(
-				static function ( $item ) {
-					return sanitize_text_field( is_scalar( $item ) ? (string) $item : '' );
-				},
-				$items
-			),
-			static fn( $item ) => $item !== ''
-		)
-	);
-}
-
-/**
- * One-time migration: legacy `_pp_list` values stored as JSON strings → PHP arrays.
- */
-function pp_migrate_list_meta_json_strings_to_array(): void {
-	if ( get_option( 'pp_list_meta_migrated_to_array' ) ) {
-		return;
-	}
-
-	$post_ids = get_posts(
-		array(
-			'post_type'              => 'pricing-package',
-			'post_status'            => 'any',
-			'posts_per_page'         => -1,
-			'fields'                 => 'ids',
-			'no_found_rows'          => true,
-			'update_post_meta_cache' => false,
-			'update_post_term_cache' => false,
-		)
-	);
-
-	foreach ( $post_ids as $post_id ) {
-		$raw = get_post_meta( (int) $post_id, '_pp_list', true );
-		if ( is_string( $raw ) && $raw !== '' ) {
-			update_post_meta( (int) $post_id, '_pp_list', pp_sanitize_list( $raw ) );
-		}
-	}
-
-	update_option( 'pp_list_meta_migrated_to_array', '1', true );
-}
-
-/**
- * Normalize list-plus meta to a flat array of booleans.
- *
- * @param mixed $meta_value Raw value from POST or meta storage.
- * @return bool[] One boolean per list item, re-indexed.
- */
-function pp_sanitize_list_plus( mixed $meta_value ): array {
-	$items = is_array( $meta_value ) ? $meta_value : [];
-	return array_values(
-		array_map(
-			static fn( $v ) => (bool) filter_var( $v, FILTER_VALIDATE_BOOLEAN ),
-			$items
-		)
-	);
-}
-
-/**
- * Sanitize boolean — returns true only for truthy values.
- */
-function pp_sanitize_boolean( mixed $value ): bool {
-	return (bool) filter_var( $value, FILTER_VALIDATE_BOOLEAN );
-}
-
-// ---------------------------------------------------------------------------
-// 4. Register meta box
-// ---------------------------------------------------------------------------
-
-add_action( 'add_meta_boxes', 'pp_add_meta_boxes' );
-
-function pp_add_meta_boxes(): void {
 	add_meta_box(
-		'pp_package_details',
-		__( 'Package Details', 'willow-pricing-package' ),
-		'pp_render_meta_box',
-		'pricing-package',
+		'series_fields',
+		__( 'Series Fields', 'series-post-type' ),
+		'series_meta_box_render',
+		'series',
 		'normal',
 		'high'
 	);
 }
 
-// ---------------------------------------------------------------------------
-// 5. Render meta box
-// ---------------------------------------------------------------------------
 
-function pp_render_meta_box( WP_Post $post ): void {
-	wp_nonce_field( 'pp_save_meta', 'pp_meta_nonce' );
+/* ==========================================================================
+   4. META BOX — RENDER
+   ========================================================================== */
 
-	$title           = get_post_meta( $post->ID, '_pp_title',           true );
-	$description     = get_post_meta( $post->ID, '_pp_description',     true );
-	$price           = get_post_meta( $post->ID, '_pp_price',           true );
-	$list_raw        = get_post_meta( $post->ID, '_pp_list',            true );
-	$list_plus_raw   = get_post_meta( $post->ID, '_pp_list_plus',       true );
-	$additional_text = get_post_meta( $post->ID, '_pp_additional_text', true );
-	$link            = get_post_meta( $post->ID, '_pp_link',            true );
-	$featured        = (bool) get_post_meta( $post->ID, '_pp_featured', true );
+function series_meta_box_render( WP_Post $post ): void {
 
-	$list_items = pp_sanitize_list( $list_raw );
-	$list_plus  = pp_sanitize_list_plus( is_array( $list_plus_raw ) ? $list_plus_raw : [] );
+	wp_nonce_field( 'series_save_fields', 'series_fields_nonce' );
 
-	pp_enqueue_meta_box_assets();
+	$hero_image_id = absint( get_post_meta( $post->ID, '_series_hero_image_id', true ) );
+	$description   = get_post_meta( $post->ID, '_series_description', true );
+	$press         = get_post_meta( $post->ID, '_series_press',       true );
+	$items_json    = get_post_meta( $post->ID, '_series_items',       true );
+	$items         = $items_json ? json_decode( $items_json, true ) : [];
+	if ( ! is_array( $items ) ) {
+		$items = [];
+	}
+
+	$hero_image_url = $hero_image_id ? wp_get_attachment_image_url( $hero_image_id, 'medium' ) : '';
+
 	?>
+<div class="series-fields-wrap">
 
-	<div class="pp-meta-box">
+  <?php /* ── Hero Image ───────────────────────────────────────────── */ ?>
+  <div class="series-field-group">
+    <label class="series-label">
+      <?php esc_html_e( 'Hero Image', 'series-post-type' ); ?>
+    </label>
+    <div class="series-hero-image-wrap">
+      <div class="series-hero-image-preview" style="<?php echo $hero_image_url ? '' : 'display:none;'; ?>">
+        <?php if ( $hero_image_url ) : ?>
+        <img src="<?php echo esc_url( $hero_image_url ); ?>" alt="">
+        <?php endif; ?>
+      </div>
+      <input type="hidden" id="series_hero_image_id" name="series_hero_image_id"
+        value="<?php echo esc_attr( $hero_image_id ); ?>">
+      <button type="button" id="series-hero-image-select" class="button">
+        <?php echo $hero_image_id ? esc_html__( 'Change Hero Image', 'series-post-type' ) : esc_html__( 'Select Hero Image', 'series-post-type' ); ?>
+      </button>
+      <button type="button" id="series-hero-image-remove" class="button-link series-image-remove"
+        style="<?php echo $hero_image_id ? '' : 'display:none;'; ?>">
+        <?php esc_html_e( 'Remove', 'series-post-type' ); ?>
+      </button>
+    </div>
+  </div>
 
-		<?php pp_render_styles(); ?>
+  <?php /* ── Description ──────────────────────────────────────────── */ ?>
+  <div class="series-field-group">
+    <label class="series-label" for="series_description">
+      <?php esc_html_e( 'Description', 'series-post-type' ); ?>
+    </label>
+    <?php
+			wp_editor(
+				$description,
+				'series_description',
+				[
+					'textarea_name' => 'series_description',
+					'textarea_rows' => 8,
+					'media_buttons' => false,
+					'teeny'         => false,
+					'tinymce'       => true,
+					'quicktags'     => true,
+				]
+			);
+			?>
+  </div>
 
-		<!-- Title -->
-		<div class="pp-field pp-field--required">
-			<label for="pp_title" class="pp-label">
-				<?php esc_html_e( 'Title', 'willow-pricing-package' ); ?>
-				<span class="pp-required" aria-label="<?php esc_attr_e( 'Required', 'willow-pricing-package' ); ?>">*</span>
-			</label>
-			<input
-				type="text"
-				id="pp_title"
-				name="pp_title"
-				class="pp-input"
-				value="<?php echo esc_attr( $title ); ?>"
-				placeholder="<?php esc_attr_e( 'Package title…', 'willow-pricing-package' ); ?>"
-				required
-				aria-required="true"
-			>
-			<p class="pp-hint" style="margin-top:4px;"><?php esc_html_e( 'You may use <br> tags to add line breaks.', 'willow-pricing-package' ); ?></p>
-		</div>
+  <?php /* ── Repeater ─────────────────────────────────────────────── */ ?>
+  <div class="series-field-group">
+    <p class="series-label"><?php esc_html_e( 'Items', 'series-post-type' ); ?></p>
 
-		<!-- Description -->
-		<div class="pp-field">
-			<label for="pp_description" class="pp-label">
-				<?php esc_html_e( 'Description', 'willow-pricing-package' ); ?>
-			</label>
-			<textarea
-				id="pp_description"
-				name="pp_description"
-				class="pp-input pp-input--textarea"
-				rows="3"
-			><?php echo esc_textarea( $description ); ?></textarea>
-		</div>
+    <div id="series-repeater" class="series-repeater">
 
-		<!-- Price -->
-		<div class="pp-field pp-field--required">
-			<label for="pp_price" class="pp-label">
-				<?php esc_html_e( 'Price', 'willow-pricing-package' ); ?>
-				<span class="pp-required" aria-label="<?php esc_attr_e( 'Required', 'willow-pricing-package' ); ?>">*</span>
-			</label>
-			<input
-				type="text"
-				id="pp_price"
-				name="pp_price"
-				class="pp-input pp-input--half"
-				value="<?php echo esc_attr( $price ); ?>"
-				placeholder="e.g. 49.99"
-				required
-				aria-required="true"
-			>
-		</div>
+      <?php foreach ( $items as $index => $item ) : ?>
+      <?php series_repeater_row_html( $index, $item ); ?>
+      <?php endforeach; ?>
 
-		<!-- List -->
-		<div class="pp-field pp-field--list">
-			<label class="pp-label">
-				<?php esc_html_e( 'List', 'willow-pricing-package' ); ?>
-				<span class="pp-hint"><?php esc_html_e( 'Optional. Add one item per row.', 'willow-pricing-package' ); ?></span>
-			</label>
+    </div><!-- #series-repeater -->
 
-			<div id="pp-list-items" class="pp-list-items">
-				<?php if ( ! empty( $list_items ) ) : ?>
-					<?php foreach ( $list_items as $index => $item ) : ?>
-						<?php $plus = isset( $list_plus[ $index ] ) ? $list_plus[ $index ] : false; ?>
-						<div class="pp-list-item">
-							<input type="hidden" name="pp_list_plus[<?php echo $index; ?>]" value="0">
+    <button type="button" id="series-add-item" class="button series-add-btn">
+      <?php esc_html_e( '+ Add Item', 'series-post-type' ); ?>
+    </button>
 
-							<label class="pp-list-item__plus-label">
-								<input
-									type="checkbox"
-									name="pp_list_plus[<?php echo $index; ?>]"
-									class="pp-checkbox pp-list-item__plus"
-									value="1"
-									<?php checked( $plus, true ); ?>
-								>
-								<?php esc_html_e( 'Plus', 'willow-pricing-package' ); ?>
-							</label>
-							<input
-								type="text"
-								name="pp_list_items[]"
-								class="pp-input pp-list-item__input"
-								value="<?php echo esc_attr( $item ); ?>"
-								placeholder="<?php esc_attr_e( 'List item…', 'willow-pricing-package' ); ?>"
-							>
-							<button
-								type="button"
-								class="pp-list-item__remove"
-								aria-label="<?php esc_attr_e( 'Remove item', 'willow-pricing-package' ); ?>"
-							>
-								<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-							</button>
-						</div>
-					<?php endforeach; ?>
-				<?php endif; ?>
-			</div>
+    <input type="hidden" id="series_items_json" name="series_items_json"
+      value="<?php echo esc_attr( $items_json ?: '[]' ); ?>">
+  </div>
 
-			<button type="button" id="pp-add-list-item" class="pp-btn pp-btn--add">
-				<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-				<?php esc_html_e( 'Add List Item', 'willow-pricing-package' ); ?>
-			</button>
-		</div>
+  <?php /* ── Press ────────────────────────────────────────────────── */ ?>
+  <div class="series-field-group">
+    <label class="series-label" for="series_press">
+      <?php esc_html_e( 'Press', 'series-post-type' ); ?>
+    </label>
+    <?php
+			wp_editor(
+				$press,
+				'series_press',
+				[
+					'textarea_name' => 'series_press',
+					'textarea_rows' => 8,
+					'media_buttons' => false,
+					'teeny'         => false,
+					'tinymce'       => true,
+					'quicktags'     => true,
+				]
+			);
+			?>
+  </div>
 
-		<!-- Additional Text -->
-		<div class="pp-field">
-			<label for="pp_additional_text" class="pp-label">
-				<?php esc_html_e( 'Additional Text', 'willow-pricing-package' ); ?>
-			</label>
-			<textarea
-				id="pp_additional_text"
-				name="pp_additional_text"
-				class="pp-input pp-input--textarea"
-				rows="3"
-				placeholder="<?php esc_attr_e( 'Optional additional text…', 'willow-pricing-package' ); ?>"
-			><?php echo esc_textarea( $additional_text ); ?></textarea>
-		</div>
+</div><!-- .series-fields-wrap -->
 
-		<!-- Link -->
-		<div class="pp-field pp-field--required">
-			<label for="pp_link" class="pp-label">
-				<?php esc_html_e( 'Link', 'willow-pricing-package' ); ?>
-				<span class="pp-required" aria-label="<?php esc_attr_e( 'Required', 'willow-pricing-package' ); ?>">*</span>
-			</label>
-			<input
-				type="url"
-				id="pp_link"
-				name="pp_link"
-				class="pp-input"
-				value="<?php echo esc_attr( $link ); ?>"
-				placeholder="https://"
-				required
-				aria-required="true"
-			>
-		</div>
+<?php
+	// Hidden template row (index = __INDEX__), cloned by JS.
+	echo '<script type="text/html" id="series-row-template">';
+	series_repeater_row_html( '__INDEX__', [ 'title' => '', 'image_id' => 0, 'item_description' => '' ] );
+	echo '</script>';
 
-		<!-- Featured -->
-		<div class="pp-field pp-field--checkbox">
-			<label class="pp-checkbox-label" for="pp_featured">
-				<input
-					type="checkbox"
-					id="pp_featured"
-					name="pp_featured"
-					class="pp-checkbox"
-					value="1"
-					<?php checked( $featured, true ); ?>
-				>
-				<span class="pp-checkbox-text">
-					<?php esc_html_e( 'Featured', 'willow-pricing-package' ); ?>
-				</span>
-				<span class="pp-hint"><?php esc_html_e( 'Mark this package as the "Most Popular" package.', 'willow-pricing-package' ); ?></span>
-			</label>
-		</div>
-
-	</div><!-- .pp-meta-box -->
-
-	<?php pp_render_inline_script(); ?>
-
-	<?php
+	series_enqueue_meta_box_assets();
 }
 
-// ---------------------------------------------------------------------------
-// 6. Styles (injected inline — scoped to meta box)
-// ---------------------------------------------------------------------------
+/**
+ * Output a single repeater row.
+ *
+ * @param int|string $index  Row index (or '__INDEX__' for the JS template).
+ * @param array      $item   { title, image_id, item_description }
+ */
+function series_repeater_row_html( $index, array $item ): void {
 
-function pp_render_styles(): void {
+	$title            = isset( $item['title'] )            ? esc_attr( $item['title'] )            : '';
+	$image_id         = isset( $item['image_id'] )         ? absint( $item['image_id'] )            : 0;
+	$item_description = isset( $item['item_description'] ) ? $item['item_description']              : '';
+	$image_url        = $image_id ? wp_get_attachment_image_url( $image_id, 'thumbnail' ) : '';
+
+	$is_template = ( '__INDEX__' === (string) $index );
+	$row_id      = $is_template ? 'series-row-__INDEX__' : 'series-row-' . $index;
+
 	?>
-	<style>
-		.pp-meta-box {
-			padding: 4px 0 8px;
-			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-		}
+<div class="series-repeater-row" id="<?php echo esc_attr( $row_id ); ?>" data-index="<?php echo esc_attr( $index ); ?>">
 
-		/* Field wrapper */
-		.pp-field {
-			margin-bottom: 20px;
-		}
-		.pp-field:last-child {
-			margin-bottom: 0;
-		}
+  <div class="series-row-handle">
+    <span class="dashicons dashicons-move"></span>
+  </div>
 
-		/* Label */
-		.pp-label {
-			display: flex;
-			align-items: center;
-			gap: 6px;
-			margin-bottom: 6px;
-			font-size: 13px;
-			font-weight: 600;
-			color: #1e1e1e;
-		}
+  <div class="series-row-fields">
 
-		.pp-required {
-			color: #c0392b;
-			font-size: 14px;
-			line-height: 1;
-		}
+    <?php /* Title */ ?>
+    <div class="series-row-field">
+      <label class="series-row-label" for="series-title-<?php echo esc_attr( $index ); ?>">
+        <?php esc_html_e( 'Title', 'series-post-type' ); ?>
+      </label>
+      <input type="text" id="series-title-<?php echo esc_attr( $index ); ?>" class="series-item-title widefat"
+        value="<?php echo $title; ?>" placeholder="<?php esc_attr_e( 'Enter title…', 'series-post-type' ); ?>">
+    </div>
 
-		.pp-hint {
-			font-size: 11px;
-			font-weight: 400;
-			color: #757575;
-		}
+    <?php /* Image */ ?>
+    <div class="series-row-field">
+      <label class="series-row-label">
+        <?php esc_html_e( 'Image', 'series-post-type' ); ?>
+      </label>
+      <div class="series-image-wrap">
+        <div class="series-image-preview" style="<?php echo $image_url ? '' : 'display:none;'; ?>">
+          <?php if ( $image_url ) : ?>
+          <img src="<?php echo esc_url( $image_url ); ?>" alt="">
+          <?php endif; ?>
+        </div>
+        <input type="hidden" class="series-item-image-id" value="<?php echo esc_attr( $image_id ); ?>">
+        <button type="button" class="button series-image-select">
+          <?php echo $image_id ? esc_html__( 'Change Image', 'series-post-type' ) : esc_html__( 'Select Image', 'series-post-type' ); ?>
+        </button>
+        <button type="button" class="button-link series-image-remove"
+          style="<?php echo $image_id ? '' : 'display:none;'; ?>">
+          <?php esc_html_e( 'Remove', 'series-post-type' ); ?>
+        </button>
+      </div>
+    </div>
 
-		/* Inputs */
-		.pp-input {
+    <?php /* Item Description — plain textarea; JS upgrades it to TinyMCE */ ?>
+    <div class="series-row-field">
+      <label class="series-row-label" for="series-item-desc-<?php echo esc_attr( $index ); ?>">
+        <?php esc_html_e( 'Item Description', 'series-post-type' ); ?>
+      </label>
+      <textarea id="series-item-desc-<?php echo esc_attr( $index ); ?>" class="series-item-item-description widefat"
+        rows="5"><?php echo $is_template ? '' : wp_kses_post( $item_description ); ?></textarea>
+    </div>
+
+  </div><!-- .series-row-fields -->
+
+  <div class="series-row-actions">
+    <button type="button" class="button-link series-remove-row"
+      aria-label="<?php esc_attr_e( 'Remove item', 'series-post-type' ); ?>">
+      <span class="dashicons dashicons-no-alt"></span>
+    </button>
+  </div>
+
+</div><!-- .series-repeater-row -->
+<?php
+}
+
+
+/* ==========================================================================
+   5. ENQUEUE META BOX ASSETS (inline — no extra files needed)
+   ========================================================================== */
+
+function series_enqueue_meta_box_assets(): void {
+
+	// Media uploader.
+	wp_enqueue_media();
+
+	// Dashicons are already enqueued in the admin; listed for clarity.
+	wp_enqueue_style( 'dashicons' );
+
+	// ── Inline CSS ────────────────────────────────────────────────────────
+	$css = '
+		.series-fields-wrap { max-width: 960px; }
+
+		.series-field-group {
+			margin-bottom: 28px;
+			padding-bottom: 24px;
+			border-bottom: 1px solid #dcdcde;
+		}
+		.series-field-group:last-child { border-bottom: none; }
+
+		.series-label {
 			display: block;
-			width: 100%;
-			padding: 8px 10px;
+			font-weight: 600;
+			margin-bottom: 8px;
 			font-size: 13px;
 			color: #1e1e1e;
-			background: #fff;
-			border: 1px solid #c3c4c7;
+		}
+
+		/* Repeater */
+		.series-repeater { margin-bottom: 12px; }
+
+		.series-repeater-row {
+			display: flex;
+			gap: 0;
+			align-items: flex-start;
+			background: #f6f7f7;
+			border: 1px solid #dcdcde;
 			border-radius: 4px;
-			box-shadow: inset 0 1px 2px rgba(0,0,0,.07);
-			transition: border-color .15s, box-shadow .15s;
-			box-sizing: border-box;
-		}
-		.pp-input:focus {
-			border-color: #2271b1;
-			box-shadow: 0 0 0 1px #2271b1;
-			outline: none;
+			margin-bottom: 12px;
+			position: relative;
 		}
 
-		.pp-input--textarea {
-			resize: vertical;
-			min-height: 80px;
-		}
-
-		.pp-input--half {
-			max-width: 200px;
-		}
-
-		/* List field */
-		.pp-list-items {
+		.series-row-handle {
 			display: flex;
-			flex-direction: column;
-			gap: 8px;
-			margin-bottom: 10px;
-		}
-
-		.pp-list-item {
-			display: flex;
-			align-items: center;
-			gap: 8px;
-		}
-
-		.pp-list-item__input {
-			flex: 1;
-		}
-
-		.pp-list-item__remove {
-			flex-shrink: 0;
-			display: inline-flex;
 			align-items: center;
 			justify-content: center;
-			width: 28px;
-			height: 28px;
-			padding: 0;
-			background: #fff;
-			border: 1px solid #c3c4c7;
-			border-radius: 4px;
-			color: #757575;
-			cursor: pointer;
-			transition: background .15s, border-color .15s, color .15s;
+			padding: 12px 8px;
+			cursor: grab;
+			color: #8c8f94;
+			flex-shrink: 0;
 		}
-		.pp-list-item__remove:hover {
-			background: #fce8e6;
-			border-color: #c0392b;
-			color: #c0392b;
+		.series-row-handle:active { cursor: grabbing; }
+
+		.series-row-fields {
+			flex: 1;
+			padding: 14px 12px;
+			min-width: 0;
 		}
 
-		/* Buttons */
-		.pp-btn--add {
-			display: inline-flex;
-			align-items: center;
-			gap: 6px;
-			padding: 6px 12px;
+		.series-row-field { margin-bottom: 14px; }
+		.series-row-field:last-child { margin-bottom: 0; }
+
+		.series-row-label {
+			display: block;
 			font-size: 12px;
 			font-weight: 600;
-			color: #2271b1;
-			background: #f0f6fc;
-			border: 1px solid #2271b1;
-			border-radius: 4px;
-			cursor: pointer;
-			transition: background .15s, color .15s;
+			color: #3c434a;
+			margin-bottom: 5px;
 		}
-		.pp-btn--add:hover {
-			background: #2271b1;
-			color: #fff;
+		.series-row-label .required {
+			color: #d63638;
+			margin-left: 2px;
 		}
 
-		/* Checkbox */
-		.pp-field--checkbox {
-			display: flex;
-			align-items: flex-start;
+		.series-row-actions {
+			padding: 12px 10px;
+			flex-shrink: 0;
 		}
-		.pp-checkbox-label {
-			display: flex;
-			align-items: center;
-			gap: 8px;
-			cursor: pointer;
-			font-size: 13px;
-			color: #1e1e1e;
+		.series-remove-row {
+			color: #d63638 !important;
+			text-decoration: none !important;
+			line-height: 1;
 		}
-		.pp-checkbox {
-			width: 16px;
-			height: 16px;
-			margin: 0;
-			cursor: pointer;
-			accent-color: #2271b1;
-		}
-		.pp-checkbox-text {
-			font-weight: 600;
-		}
-	</style>
-	<?php
-}
+		.series-remove-row:hover { color: #b32d2e !important; }
 
-// ---------------------------------------------------------------------------
-// 7. Inline JS for dynamic list field
-// ---------------------------------------------------------------------------
+		/* Hero image */
+		.series-hero-image-wrap { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+		.series-hero-image-preview img {
+			display: block;
+			max-width: 300px;
+			max-height: 200px;
+			border-radius: 3px;
+			border: 1px solid #dcdcde;
+		}
 
-function pp_render_inline_script(): void {
+		/* Repeater image preview */
+		.series-image-preview {
+			margin-bottom: 8px;
+		}
+		.series-image-preview img {
+			display: block;
+			max-width: 120px;
+			max-height: 80px;
+			border-radius: 3px;
+			border: 1px solid #dcdcde;
+		}
+		.series-image-remove { margin-left: 6px; color: #d63638 !important; }
+		.series-image-remove:hover { color: #b32d2e !important; }
+
+		.series-add-btn { margin-top: 4px; }
+	';
+
+	// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped
+	echo '<style>' . $css . '</style>';
+
+	// ── Inline JS ─────────────────────────────────────────────────────────
 	?>
-	<script>
-	( function () {
-		const container   = document.getElementById( 'pp-list-items' );
-		const addBtn      = document.getElementById( 'pp-add-list-item' );
-		const placeholder = <?php echo wp_json_encode( esc_attr__( 'List item…', 'willow-pricing-package' ) ); ?>;
-		const removeLabel = <?php echo wp_json_encode( esc_attr__( 'Remove item', 'willow-pricing-package' ) ); ?>;
-		const plusLabel   = <?php echo wp_json_encode( esc_attr__( 'Plus', 'willow-pricing-package' ) ); ?>;
+<script>
+(function($) {
+  'use strict';
 
-		function createItem( value = '', plus = false ) {
-			const row = document.createElement( 'div' );
-			row.className = 'pp-list-item';
+  const repeater = $('#series-repeater');
+  const jsonInput = $('#series_items_json');
+  const template = $('#series-row-template').html();
+  let rowIndex = repeater.children('.series-repeater-row').length;
 
-			const hidden = document.createElement( 'input' );
-			hidden.type  = 'hidden';
-			hidden.name  = 'pp_list_plus[]';
-			hidden.value = '0';
+  /* ── helpers ─────────────────────────────────────────────────── */
 
-			const checkbox = document.createElement( 'input' );
-			checkbox.type      = 'checkbox';
-			checkbox.name      = 'pp_list_plus[]';
-			checkbox.className = 'pp-checkbox pp-list-item__plus';
-			checkbox.value     = '1';
-			checkbox.checked   = plus;
+  /**
+   * Collect all repeater data into the hidden JSON input.
+   * Called before save and on every meaningful change.
+   */
+  function syncJSON() {
+    const items = [];
 
-			const label = document.createElement( 'label' );
-			label.className = 'pp-list-item__plus-label';
-			label.textContent = plusLabel;
-			label.prepend( checkbox );
+    repeater.children('.series-repeater-row').each(function() {
+      const $row = $(this);
+      const edId = getEditorId($row);
+      let desc = '';
 
-			const input = document.createElement( 'input' );
-			input.type        = 'text';
-			input.name        = 'pp_list_items[]';
-			input.className   = 'pp-input pp-list-item__input';
-			input.value       = value;
-			input.placeholder = placeholder;
+      if (edId && window.tinymce && tinymce.get(edId)) {
+        desc = tinymce.get(edId).getContent();
+      } else {
+        desc = $row.find('.series-item-item-description').val();
+      }
 
-			const btn = document.createElement( 'button' );
-			btn.type      = 'button';
-			btn.className = 'pp-list-item__remove';
-			btn.setAttribute( 'aria-label', removeLabel );
-			btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
-			btn.addEventListener( 'click', () => row.remove() );
+      items.push({
+        title: $row.find('.series-item-title').val().trim(),
+        image_id: parseInt($row.find('.series-item-image-id').val(), 10) || 0,
+        item_description: desc,
+      });
+    });
 
-			row.appendChild( hidden );
-			row.appendChild( label );
-			row.appendChild( input );
-			row.appendChild( btn );
-			return row;
-		}
+    jsonInput.val(JSON.stringify(items));
+  }
 
-		// Wire up existing remove buttons
-		container.querySelectorAll( '.pp-list-item__remove' ).forEach( btn => {
-			btn.addEventListener( 'click', () => btn.closest( '.pp-list-item' ).remove() );
-		} );
+  /** Return the textarea ID used by TinyMCE for a row. */
+  function getEditorId($row) {
+    return $row.find('.series-item-item-description').attr('id');
+  }
 
-		addBtn.addEventListener( 'click', () => {
-			const item = createItem();
-			container.appendChild( item );
-			item.querySelector( 'input[type="text"]' ).focus();
-		} );
+  /**
+   * Initialise a standalone TinyMCE instance directly on a textarea.
+   * Bypasses wp.editor.initialize(), which requires the post type to
+   * support 'editor'. Calls tinymce.init() directly instead, which works
+   * independently of the classic editor bootstrap.
+   */
+  function initEditor($textarea) {
+    const id = $textarea.attr('id');
+    if (!id || !window.tinymce) return;
 
-		document.querySelector( '#post' ).addEventListener( 'submit', function () {
-			container.querySelectorAll( '.pp-list-item' ).forEach( ( row, i ) => {
-				const hidden   = row.querySelector( 'input[type="hidden"]' );
-				const checkbox = row.querySelector( 'input[type="checkbox"]' );
-				if ( hidden )   hidden.name   = 'pp_list_plus[' + i + ']';
-				if ( checkbox ) checkbox.name = 'pp_list_plus[' + i + ']';
-				row.querySelector( 'input[type="text"]' ).name = 'pp_list_items[' + i + ']';
-			} );
-		} );
-	} )();
-	</script>
-	<?php
+    tinymce.init({
+      selector: '#' + id,
+      skin: 'wordpress',
+      skin_url: '<?php echo esc_js( includes_url( 'js/tinymce/skins/wordpress' ) ); ?>',
+      plugins: 'charmap hr lists paste tabfocus fullscreen wplink',
+      toolbar: 'formatselect bold italic | bullist numlist | blockquote | alignleft aligncenter alignright | link unlink | fullscreen',
+      menubar: false,
+      statusbar: false,
+      resize: true,
+      min_height: 200,
+      wpautop: true,
+      setup: function(editor) {
+        editor.on('input keyup change NodeChange', syncJSON);
+      },
+    });
+  }
+
+  /** Remove the TinyMCE instance for a row before destroying the DOM node. */
+  function destroyEditor($row) {
+    const id = getEditorId($row);
+    if (id && window.tinymce && tinymce.get(id)) {
+      tinymce.get(id).remove();
+    }
+  }
+
+  /* ── add row ─────────────────────────────────────────────────── */
+
+  $('#series-add-item').on('click', function() {
+    const html = template.replace(/__INDEX__/g, rowIndex);
+    const $row = $(html);
+    repeater.append($row);
+
+    // Re-assign stable ID to the new textarea before init.
+    const $ta = $row.find('.series-item-item-description');
+    $ta.attr('id', 'series-item-desc-' + rowIndex);
+
+    initEditor($ta);
+    rowIndex++;
+  });
+
+  /* ── remove row ──────────────────────────────────────────────── */
+
+  repeater.on('click', '.series-remove-row', function() {
+    const $row = $(this).closest('.series-repeater-row');
+    destroyEditor($row);
+    $row.remove();
+    syncJSON();
+  });
+
+  /* ── hero image picker ───────────────────────────────────────── */
+
+  $('#series-hero-image-select').on('click', function() {
+    const frame = wp.media({
+      title: '<?php echo esc_js( __( 'Select or Upload Hero Image', 'series-post-type' ) ); ?>',
+      button: {
+        text: '<?php echo esc_js( __( 'Use this image', 'series-post-type' ) ); ?>'
+      },
+      library: {
+        type: 'image'
+      },
+      multiple: false,
+    });
+
+    frame.on('select', function() {
+      const attachment = frame.state().get('selection').first().toJSON();
+      const previewUrl = attachment.sizes && attachment.sizes.medium ?
+        attachment.sizes.medium.url :
+        attachment.url;
+
+      $('#series_hero_image_id').val(attachment.id);
+      $('.series-hero-image-preview').html('<img src="' + previewUrl + '" alt="">').show();
+      $('#series-hero-image-select').text(
+        '<?php echo esc_js( __( 'Change Hero Image', 'series-post-type' ) ); ?>');
+      $('#series-hero-image-remove').show();
+    });
+
+    frame.open();
+  });
+
+  $('#series-hero-image-remove').on('click', function() {
+    $('#series_hero_image_id').val(0);
+    $('.series-hero-image-preview').hide().empty();
+    $('#series-hero-image-select').text('<?php echo esc_js( __( 'Select Hero Image', 'series-post-type' ) ); ?>');
+    $(this).hide();
+  });
+
+  /* ── repeater image picker ───────────────────────────────────── */
+
+  repeater.on('click', '.series-image-select', function() {
+    const $btn = $(this);
+    const $row = $btn.closest('.series-repeater-row');
+
+    const frame = wp.media({
+      title: '<?php echo esc_js( __( 'Select or Upload Image', 'series-post-type' ) ); ?>',
+      button: {
+        text: '<?php echo esc_js( __( 'Use this image', 'series-post-type' ) ); ?>'
+      },
+      library: {
+        type: 'image'
+      },
+      multiple: false,
+    });
+
+    frame.on('select', function() {
+      const attachment = frame.state().get('selection').first().toJSON();
+      const thumbUrl = attachment.sizes && attachment.sizes.thumbnail ?
+        attachment.sizes.thumbnail.url :
+        attachment.url;
+
+      $row.find('.series-item-image-id').val(attachment.id);
+      $row.find('.series-image-preview').html('<img src="' + thumbUrl + '" alt="">').show();
+      $row.find('.series-image-select').text(
+        '<?php echo esc_js( __( 'Change Image', 'series-post-type' ) ); ?>');
+      $row.find('.series-image-remove').show();
+      syncJSON();
+    });
+
+    frame.open();
+  });
+
+  repeater.on('click', '.series-image-remove', function() {
+    const $row = $(this).closest('.series-repeater-row');
+    $row.find('.series-item-image-id').val(0);
+    $row.find('.series-image-preview').hide().empty();
+    $row.find('.series-image-select').text('<?php echo esc_js( __( 'Select Image', 'series-post-type' ) ); ?>');
+    $(this).hide();
+    syncJSON();
+  });
+
+  /* ── live sync on text changes ───────────────────────────────── */
+
+  repeater.on('input change', '.series-item-title', syncJSON);
+
+  /* ── sync before WP saves ────────────────────────────────────── */
+
+  $('#post').on('submit', syncJSON);
+
+  /* ── init existing rows on page load ─────────────────────────── */
+
+  repeater.children('.series-repeater-row').each(function() {
+    const $ta = $(this).find('.series-item-item-description');
+    if ($ta.length) {
+      initEditor($ta);
+    }
+  });
+
+})(jQuery);
+</script>
+<?php
 }
 
-// ---------------------------------------------------------------------------
-// 8. Enqueue any extra admin assets (placeholder — extend as needed)
-// ---------------------------------------------------------------------------
 
-function pp_enqueue_meta_box_assets(): void {
-	// Styles and scripts are injected inline above.
-	// Hook wp_enqueue_media() here if you ever add a media picker.
-}
+/* ==========================================================================
+   6. SAVE META
+   ========================================================================== */
 
-// ---------------------------------------------------------------------------
-// 9. Save meta
-// ---------------------------------------------------------------------------
+add_action( 'save_post_series', 'series_save_meta', 10, 2 );
 
-add_action( 'save_post_pricing-package', 'pp_save_meta', 10, 2 );
+function series_save_meta( int $post_id, WP_Post $post ): void {
 
-function pp_save_meta( int $post_id, WP_Post $post ): void {
+	// ── Guards ────────────────────────────────────────────────────────────
 
-	// Nonce check
-	if (
-		! isset( $_POST['pp_meta_nonce'] ) ||
-		! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['pp_meta_nonce'] ) ), 'pp_save_meta' )
-	) {
+	// Verify nonce.
+	$nonce = isset( $_POST['series_fields_nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['series_fields_nonce'] ) ) : '';
+	if ( ! wp_verify_nonce( $nonce, 'series_save_fields' ) ) {
 		return;
 	}
 
-	// Capability check
+	// Skip autosaves and revisions.
+	if ( defined( 'DOING_AUTOSAVE' ) && DOING_AUTOSAVE ) {
+		return;
+	}
+	if ( wp_is_post_revision( $post_id ) ) {
+		return;
+	}
+
+	// Permission check.
 	if ( ! current_user_can( 'edit_post', $post_id ) ) {
 		return;
 	}
 
-	// Don't save on autosave / revision
-	if ( wp_is_post_autosave( $post_id ) || wp_is_post_revision( $post_id ) ) {
-		return;
+	// ── Hero Image ────────────────────────────────────────────────────────
+
+	if ( isset( $_POST['series_hero_image_id'] ) ) {
+		update_post_meta(
+			$post_id,
+			'_series_hero_image_id',
+			absint( $_POST['series_hero_image_id'] )
+		);
 	}
 
-	// --- Title (required) ---
-	if ( isset( $_POST['pp_title'] ) ) {
-		$title = pp_sanitize_title( $_POST['pp_title'] );
-		update_post_meta( $post_id, '_pp_title', $title );
+	// ── Description ───────────────────────────────────────────────────────
+
+	if ( isset( $_POST['series_description'] ) ) {
+		update_post_meta(
+			$post_id,
+			'_series_description',
+			series_sanitize_wysiwyg( wp_unslash( $_POST['series_description'] ) )
+		);
 	}
 
-	// --- Description ---
-	if ( isset( $_POST['pp_description'] ) ) {
-		$description = sanitize_textarea_field( wp_unslash( $_POST['pp_description'] ) );
-		update_post_meta( $post_id, '_pp_description', $description );
+	// ── Press ─────────────────────────────────────────────────────────────
+
+	if ( isset( $_POST['series_press'] ) ) {
+		update_post_meta(
+			$post_id,
+			'_series_press',
+			series_sanitize_wysiwyg( wp_unslash( $_POST['series_press'] ) )
+		);
 	}
 
-	// --- Price (required) ---
-	if ( isset( $_POST['pp_price'] ) ) {
-		$price = pp_sanitize_price( wp_unslash( $_POST['pp_price'] ) );
-		update_post_meta( $post_id, '_pp_price', $price );
+	// ── Repeater items ────────────────────────────────────────────────────
+
+	if ( isset( $_POST['series_items_json'] ) ) {
+		update_post_meta(
+			$post_id,
+			'_series_items',
+			series_sanitize_items_json( wp_unslash( $_POST['series_items_json'] ) )
+		);
 	}
-
-	// --- List items + plus flags ---
-	$raw_items = isset( $_POST['pp_list_items'] ) && is_array( $_POST['pp_list_items'] )
-		? $_POST['pp_list_items']
-		: [];
-	$raw_plus = isset( $_POST['pp_list_plus'] ) && is_array( $_POST['pp_list_plus'] )
-		? $_POST['pp_list_plus']
-		: [];
-
-	$clean_items = [];
-	$clean_plus  = [];
-
-	foreach ( $raw_items as $i => $raw_item ) {
-		$item = sanitize_text_field( wp_unslash( $raw_item ) );
-		if ( $item === '' ) {
-			continue;
-		}
-		$clean_items[] = $item;
-		$clean_plus[]  = isset( $raw_plus[ $i ] ) && '1' === sanitize_text_field( wp_unslash( $raw_plus[ $i ] ) );
-	}
-
-	update_post_meta( $post_id, '_pp_list',      pp_sanitize_list( $clean_items ) );
-	update_post_meta( $post_id, '_pp_list_plus', pp_sanitize_list_plus( $clean_plus ) );
-
-	// --- Additional Text ---
-	if ( isset( $_POST['pp_additional_text'] ) ) {
-		$additional_text = sanitize_textarea_field( wp_unslash( $_POST['pp_additional_text'] ) );
-		update_post_meta( $post_id, '_pp_additional_text', $additional_text );
-	}
-
-	// --- Link (required) ---
-	if ( isset( $_POST['pp_link'] ) ) {
-		$link = esc_url_raw( wp_unslash( $_POST['pp_link'] ) );
-		update_post_meta( $post_id, '_pp_link', $link );
-	}
-
-	// --- Featured ---
-	$featured = isset( $_POST['pp_featured'] ) && '1' === $_POST['pp_featured'];
-	update_post_meta( $post_id, '_pp_featured', (int) $featured );
 }
