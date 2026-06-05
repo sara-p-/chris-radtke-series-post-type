@@ -15,3 +15,4 @@ load_plugin_textdomain( 'crp-project', false, dirname( plugin_basename( __FILE__
 
 require_once 'inc/custom-post-type.php';
 require_once 'inc/custom-fields.php';
+require_once 'inc/custom-tax-projects-editor.php';

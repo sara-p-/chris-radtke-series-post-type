@@ -7,6 +7,7 @@
  *
  * Meta keys registered:
  *  - _series_hero_image_id      (int,    attachment ID for the hero image)
+ *  - _series_years              (string, plain text year/s)
  *  - _series_description        (string, WYSIWYG)
  *  - _series_press              (string, WYSIWYG)
  *  - _series_items              (array,  repeater — title, image_id, item_description)
@@ -36,6 +37,13 @@ function series_register_meta(): void {
 		'type'              => 'integer',
 		'description'       => 'Series hero image attachment ID.',
 		'sanitize_callback' => 'absint',
+	] ) );
+
+	// Year/s — plain text field.
+	register_post_meta( 'series', '_series_years', array_merge( $shared, [
+		'type'              => 'string',
+		'description'       => 'Series year/s.',
+		'sanitize_callback' => 'sanitize_text_field',
 	] ) );
 
 	// Plain WYSIWYG fields stored as post content-style HTML.
@@ -138,6 +146,7 @@ function series_meta_box_render( WP_Post $post ): void {
 	wp_nonce_field( 'series_save_fields', 'series_fields_nonce' );
 
 	$hero_image_id = absint( get_post_meta( $post->ID, '_series_hero_image_id', true ) );
+	$years         = get_post_meta( $post->ID, '_series_years', true );
 	$description   = get_post_meta( $post->ID, '_series_description', true );
 	$press         = get_post_meta( $post->ID, '_series_press',       true );
 	$items_json    = get_post_meta( $post->ID, '_series_items',       true );
@@ -172,6 +181,15 @@ function series_meta_box_render( WP_Post $post ): void {
         <?php esc_html_e( 'Remove', 'series-post-type' ); ?>
       </button>
     </div>
+  </div>
+
+  <?php /* ── Year/s ───────────────────────────────────────────────── */ ?>
+  <div class="series-field-group">
+    <label class="series-label" for="series_years">
+      <?php esc_html_e( 'Year/s', 'series-post-type' ); ?>
+    </label>
+    <input type="text" id="series_years" name="series_years" class="widefat" value="<?php echo esc_attr( $years ); ?>"
+      placeholder="<?php esc_attr_e( 'e.g. 2023 or 2022–2024', 'series-post-type' ); ?>">
   </div>
 
   <?php /* ── Description ──────────────────────────────────────────── */ ?>
@@ -716,6 +734,16 @@ function series_save_meta( int $post_id, WP_Post $post ): void {
 			$post_id,
 			'_series_hero_image_id',
 			absint( $_POST['series_hero_image_id'] )
+		);
+	}
+
+	// ── Year/s ────────────────────────────────────────────────────────────
+
+	if ( isset( $_POST['series_years'] ) ) {
+		update_post_meta(
+			$post_id,
+			'_series_years',
+			sanitize_text_field( wp_unslash( $_POST['series_years'] ) )
 		);
 	}
 
