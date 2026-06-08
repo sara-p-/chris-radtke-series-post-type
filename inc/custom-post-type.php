@@ -48,11 +48,6 @@ add_action( 'init', function() {
         'show_ui'      => true,
         'show_in_rest' => true,
         'rest_base'    => 'projects',
-        // 'rewrite'   => [
-        //     'slug'         => 'pricing-locations',
-        //     'with_front'   => false,
-        //     'hierarchical' => true,
-        // ],
     ] );
 
     // 2. Collections taxonomy
