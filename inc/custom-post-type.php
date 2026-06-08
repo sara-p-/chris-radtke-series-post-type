@@ -22,9 +22,10 @@ function series_post_type() {
         'has_archive'   => true,
         'show_in_rest'  => true,
         'taxonomies'    => array( 'projects', 'collections' ),
-        'supports'      => array( 'title', 'page-attributes', 'thumbnail' ),
+        'supports'      => array( 'title', 'page-attributes', 'thumbnail', 'custom-fields' ),
         // 'rewrite'    => array( 'slug' => 'work' ),
         'menu_icon'     => 'dashicons-images-alt',
+        'capability_type' => 'post'
     );
 
     register_post_type( 'series', $args );
