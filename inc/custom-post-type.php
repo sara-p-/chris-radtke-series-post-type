@@ -23,7 +23,6 @@ function series_post_type() {
         'show_in_rest'  => true,
         'taxonomies'    => array( 'projects', 'collections' ),
         'supports'      => array( 'title', 'page-attributes', 'thumbnail', 'custom-fields' ),
-        // 'rewrite'    => array( 'slug' => 'work' ),
         'menu_icon'     => 'dashicons-images-alt',
         'capability_type' => 'post'
     );
