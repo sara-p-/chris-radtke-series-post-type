@@ -71,11 +71,6 @@ add_action( 'init', function() {
         'show_ui'      => true,
         'show_in_rest' => true,
         'rest_base'    => 'collections',
-        // 'rewrite'   => [
-        //     'slug'         => 'collections',
-        //     'with_front'   => false,
-        //     'hierarchical' => true,
-        // ],
     ] );
 
 } );
