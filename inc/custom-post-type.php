@@ -1,25 +1,25 @@
 <?php
 
-function series_post_type() {
+function work_post_type() {
     $labels = array(
-        'name'               => _x( 'Series', 'Post type name'),
-        'singular_name'      => _x( 'Series', 'Post type singular name'),
-        'menu_name'          => _x( 'Series', 'Post type name in menu'),
+        'name'               => _x( 'Work', 'Post type name'),
+        'singular_name'      => _x( 'Work', 'Post type singular name'),
+        'menu_name'          => _x( 'Work', 'Post type name in menu'),
         'add_new'            => _x( 'Add New', 'Add new'),
-        'add_new_item'       => __( 'Add New Series' ),
-        'edit_item'          => __( 'Edit Series' ),
-        'new_item'           => __( 'New Series' ),
-        'view_item'          => __( 'View Series' ),
-        'search_items'       => __( 'Search Series' ),
-        'not_found'          => __( 'No Series found' ),
-        'not_found_in_trash' => __( 'No Series found in Trash' ),
+        'add_new_item'       => __( 'Add New Work' ),
+        'edit_item'          => __( 'Edit Work' ),
+        'new_item'           => __( 'New Work' ),
+        'view_item'          => __( 'View Work' ),
+        'search_items'       => __( 'Search Work' ),
+        'not_found'          => __( 'No Work found' ),
+        'not_found_in_trash' => __( 'No Work found in Trash' ),
     );
 
     $args = array(
         'labels'        => $labels,
         'public'        => true,
         'hierarchical'  => true,
-        'has_archive'   => true,
+        'has_archive'   => false,
         'show_in_rest'  => true,
         'taxonomies'    => array( 'projects', 'collections' ),
         'supports'      => array( 'title', 'page-attributes', 'thumbnail', 'custom-fields' ),
@@ -27,14 +27,14 @@ function series_post_type() {
         'capability_type' => 'post'
     );
 
-    register_post_type( 'series', $args );
+    register_post_type( 'work', $args );
 }
-add_action( 'init', 'series_post_type' );
+add_action( 'init', 'work_post_type' );
 
 add_action( 'init', function() {
 
     // 1. Projects taxonomy
-    register_taxonomy( 'projects', 'series', [
+    register_taxonomy( 'projects', 'work', [
         'label'        => 'Projects',
         'labels'       => [
             'name'          => 'Projects',
@@ -51,7 +51,7 @@ add_action( 'init', function() {
     ] );
 
     // 2. Collections taxonomy
-    register_taxonomy( 'collections', 'series', [
+    register_taxonomy( 'collections', 'work', [
         'label'        => 'Collections',
         'labels'       => [
             'name'              => 'Collections',

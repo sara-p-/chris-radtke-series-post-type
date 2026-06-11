@@ -1,0 +1,20 @@
+{
+  "$schema": "https://schemas.wp.org/trunk/block.json",
+  "apiVersion": 3,
+  "name": "work/work-hero",
+  "version": "0.1.0",
+  "title": "Work Hero",
+  "category": "series",
+  "icon": "smiley",
+  "description": "A hero block made for the Work CPT.",
+  "example": {},
+  "supports": {
+    "html": false
+  },
+  "textdomain": "work-hero",
+  "editorScript": "file:./index.js",
+  "editorStyle": "file:./index.css",
+  "style": "file:./style-index.css",
+  "render": "file:./render.php",
+  "viewScript": "file:./view.js"
+}

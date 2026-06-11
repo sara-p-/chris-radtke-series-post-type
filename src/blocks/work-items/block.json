@@ -1,0 +1,20 @@
+{
+  "$schema": "https://schemas.wp.org/trunk/block.json",
+  "apiVersion": 3,
+  "name": "work/work-items",
+  "version": "0.1.0",
+  "title": "Work Items",
+  "category": "work",
+  "icon": "smiley",
+  "description": "A block to display all the items for each Work post.",
+  "example": {},
+  "supports": {
+    "html": false
+  },
+  "textdomain": "work-items",
+  "editorScript": "file:./index.js",
+  "editorStyle": "file:./index.css",
+  "style": "file:./style-index.css",
+  "render": "file:./render.php",
+  "viewScript": "file:./view.js"
+}
