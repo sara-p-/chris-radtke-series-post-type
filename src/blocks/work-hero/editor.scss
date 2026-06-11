@@ -4,6 +4,23 @@
  * Replace them with your own styles or remove the file completely.
  */
 
-.wp-block-series-hero {
-	border: 1px dotted #f00;
+.editor-work-hero {
+  background: var(--wp--preset--color--dark-grey);
+  color: var(--wp--preset--color--off-white);
+  border: 2px solid var(--wp--preset--color--dark-grey);
+  padding-bottom: 0;
+  padding-top: 21rem;
+  padding-left: var(--wp--style--root--padding-left);
+  padding-right: var(--wp--style--root--padding-right);
+
+  &__inner {
+    width: 100%;
+    max-width: var(--wp--style--global--wide-size);
+    margin: auto;
+
+    h1 {
+      margin: 0;
+      margin-bottom: -10px;
+    }
+  }
 }

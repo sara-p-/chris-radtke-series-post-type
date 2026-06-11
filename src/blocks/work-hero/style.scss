@@ -5,8 +5,25 @@
  * Replace them with your own styles or remove the file completely.
  */
 
-.wp-block-series-hero {
-	background-color: #21759b;
-	color: #fff;
-	padding: 2px;
+.wp-block-work-work-hero {
+}
+
+.work-hero.wp-block-group.has-global-padding.is-layout-constrained.wp-block-group-is-layout-constrained {
+  padding-top: 26.4rem;
+  padding-bottom: 0;
+  color: var(--wp--preset--color--off-white);
+}
+
+.work-hero__inner {
+  margin-bottom: -10px;
+  position: relative;
+  width: 100%;
+  max-width: var(--wp--style--global--wide-size);
+  margin: auto;
+
+  .wp-block-post-title {
+    margin: 0;
+    position: absolute;
+    bottom: -10px;
+  }
 }

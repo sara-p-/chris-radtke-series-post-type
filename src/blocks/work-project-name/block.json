@@ -1,18 +1,18 @@
 {
   "$schema": "https://schemas.wp.org/trunk/block.json",
   "apiVersion": 3,
-  "name": "work/work-hero",
+  "name": "work/work-project-name",
   "version": "0.1.0",
-  "title": "Work Hero",
+  "title": "Work Project Name",
   "category": "series",
   "icon": "smiley",
-  "description": "A hero block made for the Work CPT.",
+  "description": "A block that displays the Project names for a given Work post.",
   "example": {},
   "supports": {
-    "html": false,
-    "align": ["wide", "full"]
+    "html": false
   },
-  "textdomain": "work-hero",
+  "usesContext": ["postId", "postType"],
+  "textdomain": "work-project-name",
   "editorScript": "file:./index.js",
   "editorStyle": "file:./index.css",
   "style": "file:./style-index.css",

@@ -18,7 +18,7 @@ require_once 'inc/custom-fields.php';
 
 
 add_action( 'init', function() {
-    foreach ( array( 'work-hero', 'work-items', 'work-statement' ) as $block ) {
+    foreach ( array( 'work-hero', 'work-items', 'work-statement', 'work-project-name' ) as $block ) {
         $result = register_block_type( __DIR__ . '/build/blocks/' . $block );
         if ( ! $result ) {
             error_log( 'FAILED to register: ' . __DIR__ . '/build/blocks/' . $block );
