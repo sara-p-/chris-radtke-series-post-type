@@ -1,38 +1,57 @@
-/**
- * Retrieves the translation of text.
- *
- * @see https://developer.wordpress.org/block-editor/reference-guides/packages/packages-i18n/
- */
 import { __ } from '@wordpress/i18n'
-
-/**
- * React hook that is used to mark the block wrapper element.
- * It provides all the necessary props like the class name.
- *
- * @see https://developer.wordpress.org/block-editor/reference-guides/packages/packages-block-editor/#useblockprops
- */
+import { RawHTML } from '@wordpress/element'
 import { useBlockProps } from '@wordpress/block-editor'
+import { useEntityProp } from '@wordpress/core-data'
+import { Notice } from '@wordpress/components'
+import { autop } from '@wordpress/autop'
+import { safeHTML } from '@wordpress/dom'
 
-/**
- * Lets webpack process CSS, SASS or SCSS files referenced in JavaScript files.
- * Those files can contain any CSS code that gets applied to the editor.
- *
- * @see https://www.npmjs.com/package/@wordpress/scripts#using-css
- */
-import './editor.scss'
+export default function Edit({ context }) {
+  const { postId, postType } = context
 
-/**
- * The edit function describes the structure of your block in the context of the
- * editor. This represents what the editor will render when the block is used.
- *
- * @see https://developer.wordpress.org/block-editor/reference-guides/block-api/block-edit-save/#edit
- *
- * @return {Element} Element to render.
- */
-export default function Edit() {
+  const [meta] = useEntityProp('postType', postType, 'meta', postId)
+  const description = meta?._work_description
+
+  const blockProps = useBlockProps({ className: 'work-statement' })
+
+  if (!postId) {
+    return (
+      <div {...blockProps}>
+        {/* <Notice status='info' isDismissible={false}>
+          {__(
+            'The work description will display when viewing a Work post.',
+            'work',
+          )}
+        </Notice> */}
+        <p>Work Statement placeholder...</p>
+        <p>
+          Lorem Ipsum is simply dummy text of the printing and typesetting
+          industry. Lorem Ipsum has been the industry's standard dummy text ever
+          since 1966, when designers at Letraset and James Mosley, the librarian
+          at St Bride Printing Library, took a 1914 Cicero translation and
+          scrambled it to make dummy text for Letraset's Body Type sheets. It
+          has survived not only many decades, but also the leap into electronic
+          typesetting, remaining essentially unchanged. It was popularised
+          thanks to these sheets and more recently with desktop publishing
+          software including versions of Lorem Ipsum.
+        </p>
+      </div>
+    )
+  }
+
+  if (!description) {
+    return (
+      <div {...blockProps}>
+        <Notice status='info' isDismissible={false}>
+          {__('No description set for this post.', 'work')}
+        </Notice>
+      </div>
+    )
+  }
+
   return (
-    <p {...useBlockProps()}>
-      {__('Series Statement – hello from the editor!', 'statement')}
-    </p>
+    <div {...blockProps}>
+      <RawHTML>{safeHTML(autop(description))}</RawHTML>
+    </div>
   )
 }
