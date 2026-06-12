@@ -11,6 +11,7 @@
   "supports": {
     "html": false
   },
+  "usesContext": ["postId", "postType"],
   "textdomain": "work-items",
   "editorScript": "file:./index.js",
   "editorStyle": "file:./index.css",
