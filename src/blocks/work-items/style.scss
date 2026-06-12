@@ -37,6 +37,9 @@
       padding-top: 0;
       border-top: none;
     }
+    &:last-of-type {
+      padding-bottom: clamp(1.44rem, calc(0.4rem + 3.9vw), 3rem);
+    }
   }
 
   &__header {
@@ -56,14 +59,24 @@
   }
 
   &__image {
-    width: 100%;
+    width: revert-rule;
     height: auto;
     object-fit: cover;
   }
 }
 
 @media screen and (max-width: 768px) {
-  .work-items__header {
-    flex-direction: column;
+  .work-items {
+    &__header {
+      flex-direction: column;
+    }
+  }
+}
+
+@media screen and (max-width: 480px) {
+  .work-items {
+    &__image {
+      width: 100%;
+    }
   }
 }

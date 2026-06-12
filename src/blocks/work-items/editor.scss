@@ -11,6 +11,7 @@
   gap: clamp(1.44rem, calc(0.4rem + 3.9vw), 3rem);
   padding-top: clamp(1.44rem, calc(0.4rem + 3.9vw), 3rem);
   border-top: 1px solid var(--wp--preset--color--dark-grey);
+  padding-bottom: clamp(1.44rem, calc(0.4rem + 3.9vw), 3rem);
 
   &__header {
     width: 100%;
