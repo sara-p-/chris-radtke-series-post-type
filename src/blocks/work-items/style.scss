@@ -5,8 +5,65 @@
  * Replace them with your own styles or remove the file completely.
  */
 
-.wp-block-series-work-items {
-	background-color: #21759b;
-	color: #fff;
-	padding: 2px;
+.work-items {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(1.44rem, calc(0.4rem + 3.9vw), 3rem);
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  p,
+  a {
+    margin: 0;
+  }
+
+  h2 {
+    line-height: 1;
+  }
+
+  &__item {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(1.44rem, calc(0.4rem + 3.9vw), 3rem);
+    padding-top: clamp(1.44rem, calc(0.4rem + 3.9vw), 3rem);
+    border-top: 1px solid var(--wp--preset--color--dark-grey);
+    &:has(.work-items__column-empty) {
+      gap: 0;
+      padding-top: 0;
+      border-top: none;
+    }
+  }
+
+  &__header {
+    width: 100%;
+    display: flex;
+    gap: clamp(1rem, calc(0.667rem + 1.25vw), 1.5rem);
+  }
+
+  &__column {
+    flex: 1;
+  }
+
+  &__title-box {
+  }
+
+  &__description {
+  }
+
+  &__image {
+    width: 100%;
+    height: auto;
+    object-fit: cover;
+  }
+}
+
+@media screen and (max-width: 768px) {
+  .work-items__header {
+    flex-direction: column;
+  }
 }

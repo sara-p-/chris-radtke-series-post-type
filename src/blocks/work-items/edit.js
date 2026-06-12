@@ -50,14 +50,25 @@ export default function Edit({ context }) {
     [items],
   )
 
-  const blockProps = useBlockProps({ className: 'work-items' })
+  const blockProps = useBlockProps({ className: 'editor-work-items' })
 
   if (!postId) {
     return (
       <div {...blockProps}>
-        <Notice status='info' isDismissible={false}>
+        <div className='editor-work-items__header'>
+          <div className='editor-work-items__column'>
+            <h2>Title Placeholder</h2>
+          </div>
+          <div className='editor-work-items__column'>
+            <p>Work items will display when viewing a Work post.</p>
+          </div>
+        </div>
+        <div className='editor-work-items__image'>
+          <h3>Placeholder</h3>
+        </div>
+        {/* <Notice status='info' isDismissible={false}>
           {__('Work items will display when viewing a Work post.', 'work')}
-        </Notice>
+        </Notice> */}
       </div>
     )
   }

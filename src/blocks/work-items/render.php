@@ -41,21 +41,31 @@ $wrapper_attributes = get_block_wrapper_attributes(
 		if ( ! $title && ! $years && ! $image_id && ! $description ) {
 			continue;
 		}
+
+    // Create class for items that don't have a title, year, or description
+    $column_class = '';
+    if (! $title && ! $years && ! $description) {
+      $column_class = 'work-items__column-empty';
+    }
+    
 		?>
   <article class="work-items__item">
     <div class="work-items__header">
-      <div class="work-items__title-box">
-        <h3 class="work-items__title">
+      <div class="work-items__title-box  work-items__column <?php echo $column_class; ?>">
+        <h2 class="work-items__title">
           <?php if ( $title ) : ?>
           <span><?php echo esc_html( $title ); ?> </span>
           <?php endif; ?>
-          <?php if ( $years ) : ?>
-          <span class="work-items__years">| <?php echo esc_html( $years ); ?></span>
+          <?php if ( $title && $years ) : ?>
+          <span class="work-items__line"> | </span>
           <?php endif; ?>
-        </h3>
+          <?php if ( $years ) : ?>
+          <span class="work-items__years"><?php echo esc_html( $years ); ?></span>
+          <?php endif; ?>
+        </h2>
       </div>
       <?php if ( $description ) : ?>
-      <div class="work-items__description">
+      <div class="work-items__description work-items__column">
         <?php echo wp_kses_post( wpautop( wptexturize( $description ) ) ); ?>
       </div>
       <?php endif; ?>
