@@ -4,7 +4,7 @@
   "name": "work/work-hero",
   "version": "0.1.0",
   "title": "Work Hero",
-  "category": "series",
+  "category": "work",
   "icon": "smiley",
   "description": "A hero block made for the Work CPT.",
   "example": {},

@@ -4,7 +4,7 @@
   "name": "work/work-project-name",
   "version": "0.1.0",
   "title": "Work Project Name",
-  "category": "series",
+  "category": "work",
   "icon": "smiley",
   "description": "A block that displays the Project names for a given Work post.",
   "example": {},
