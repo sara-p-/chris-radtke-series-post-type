@@ -23,7 +23,7 @@ export default function Edit({ context }) {
             'work',
           )}
         </Notice> */}
-        <p>Work Press placeholder...</p>
+        <h2>Press placeholder...</h2>
         <p>
           If there are press items for the work, they will appear here on the
           front end.
